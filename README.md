@@ -32,3 +32,23 @@ The CMake target can be configured to use the toolchain from the nxdk:
 
 On macOS you may also have to modify `PATH` in the `Environment` section such that a homebrew version of LLVM
 is preferred over Xcode's (to supply `dlltool`).
+
+## Including in CMake-based projects
+
+This project is expected to be used as a dependency of other projects.
+
+You can include it via `FetchContent`. In your `CMakeLists.txt` file:
+
+```cmake
+include(FetchContent)
+
+FetchContent_Declare(
+        pbkitplusplus
+        GIT_REPOSITORY https://github.com/abaire/pbkitplusplus
+        GIT_TAG        main
+)
+
+FetchContent_MakeAvailable(pbkitplusplus)
+```
+pbkitplusplus also provides [xbox_math3d](https://github.com/abaire/xbox_math3d) and
+[xbox-swizzle](https://github.com/abaire/xbox-swizzle) as these are often needed by users of this library.
