@@ -7,7 +7,7 @@ endif ()
 project(pbkitplusplus VERSION 0.5.0 LANGUAGES CXX)
 
 option(
-        NO_OPT
+        PBKPP_NO_OPT
         "Suppress optimization on core files that are typically optimized regardless of release/debug configuration"
         OFF
 )
@@ -128,7 +128,7 @@ block(SCOPE_FOR VARIABLES)
             _USE_MATH_DEFINES
     )
 
-    if (NO_OPT)
+    if (PBKPP_NO_OPT)
         target_compile_options(
                 ${PROJECT_NAME}
                 PRIVATE

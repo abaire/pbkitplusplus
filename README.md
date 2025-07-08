@@ -16,7 +16,7 @@ If you're interested in nv2a graphics debugging, check out
 
 By default, this project will compile with optimizations enabled even if the `CMAKE_BUILD_TYPE` is set to debug. This is
 done to allow host code to be debugged while minimizing the negative performance impact on this library. This library
-may be forced to build without optimization by setting the "NO_OPT" CMake option to "ON". 
+may be forced to build without optimization by setting the "PBKPP_NO_OPT" CMake option to "ON". 
 
 ### Building with CLion
 
