@@ -771,10 +771,16 @@ class NV2AState {
 
   //! Renders a 256x256 checkerboard pattern that is stretched and unprojected to fill the framebuffer.
   //!
-  //! Note: this leaves the tex0 stage disabled, disables all shader stage programs, and sets the final combiner to
-  //! SRC_R0
+  //! Note: this leaves the tex0 stage disabled and disables all shader stage programs.
   void DrawCheckerboardUnproject(uint32_t first_color = 0xFF00FFFF, uint32_t second_color = 0xFF000000,
                                  uint32_t checker_size = 8);
+
+  //! Renders a 256x256 checkerboard pattern that is stretched to fill the size of the framebuffer. It is assumed that
+  //! the projection matrix is an identity matrix.
+  //!
+  //! Note: this leaves the tex0 stage disabled and disables all shader stage programs.
+  void DrawCheckerboard(uint32_t first_color = 0xFF00FFFF, uint32_t second_color = 0xFF000000,
+                        uint32_t checker_size = 8);
 
   //! Sets up rendering to write to a non-framebuffer address.
   void RenderToSurfaceStart(void *surface_address, SurfaceColorFormat color_format, uint32_t width, uint32_t height,

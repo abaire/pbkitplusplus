@@ -1521,6 +1521,50 @@ void NV2AState::DrawCheckerboardUnproject(uint32_t first_color, uint32_t second_
   RestoreFinalCombinerState(combiner_state);
 }
 
+void NV2AState::DrawCheckerboard(uint32_t first_color, uint32_t second_color, uint32_t checker_size) {
+  Pushbuffer::Begin();
+  Pushbuffer::Push(NV097_SET_LIGHTING_ENABLE, false);
+  Pushbuffer::Push(NV097_SET_SPECULAR_ENABLE, false);
+  Pushbuffer::End();
+
+  auto combiner_state = GetFinalCombinerState();
+
+  SetFinalCombiner0Just(NV2AState::SRC_TEX0);
+  SetFinalCombiner1Just(NV2AState::SRC_ZERO, true, true);
+  SetTextureStageEnabled(0, true);
+  SetShaderStageProgram(NV2AState::STAGE_2D_PROJECTIVE);
+
+  static constexpr uint32_t kTextureSize = 256;
+
+  auto &texture_stage = GetTextureStage(0);
+  texture_stage.SetFormat(GetTextureFormatInfo(NV097_SET_TEXTURE_FORMAT_COLOR_SZ_A8B8G8R8));
+  texture_stage.SetTextureDimensions(kTextureSize, kTextureSize);
+  SetupTextureStages();
+
+  auto texture_memory = GetTextureMemoryForStage(0);
+  GenerateSwizzledRGBACheckerboard(texture_memory, 0, 0, kTextureSize, kTextureSize, kTextureSize * 4, first_color,
+                                   second_color, checker_size);
+
+  const auto width = GetFramebufferWidthF();
+  const auto height = GetFramebufferHeightF();
+
+  Begin(PRIMITIVE_QUADS);
+  SetTexCoord0(0.0f, 0.0f);
+  SetVertex(0.0f, 0.0f, 0.1f, 1.0f);
+  SetTexCoord0(1.0f, 0.0f);
+  SetVertex(width, 0.0f, 0.1f, 1.0f);
+  SetTexCoord0(1.0f, 1.0f);
+  SetVertex(width, height, 0.1f, 1.0f);
+  SetTexCoord0(0.0f, 1.0f);
+  SetVertex(0.0f, height, 0.1f, 1.0f);
+  End();
+
+  SetTextureStageEnabled(0, false);
+  SetShaderStageProgram(STAGE_NONE);
+
+  RestoreFinalCombinerState(combiner_state);
+}
+
 void NV2AState::RenderToSurfaceStart(void *surface_address, SurfaceColorFormat color_format, uint32_t width,
                                      uint32_t height, bool swizzle, uint32_t clip_x, uint32_t clip_y,
                                      uint32_t clip_width, uint32_t clip_height, AntiAliasingSetting aa) {
