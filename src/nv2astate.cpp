@@ -1570,7 +1570,7 @@ void NV2AState::RenderToSurfaceStart(void *surface_address, SurfaceColorFormat c
                                      uint32_t clip_width, uint32_t clip_height, AntiAliasingSetting aa) {
   const auto kFramebufferPitch = GetFramebufferWidth() * 4;
 
-  const uint32_t surface_pitch = NV2AState::GetSurfaceColorPitch(color_format, GetFramebufferWidth());
+  const uint32_t surface_pitch = NV2AState::GetSurfaceColorPitch(color_format, width);
 
   Pushbuffer::Begin();
   Pushbuffer::Push(NV097_SET_CONTEXT_DMA_COLOR, kDefaultDMAChannelA);
