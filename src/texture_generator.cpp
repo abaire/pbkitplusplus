@@ -241,4 +241,33 @@ int GenerateColoredCheckerboardSurface(SDL_Surface **gradient_surface, int width
   return 0;
 }
 
+void GenerateRGBDiagonalLinePattern(void *target, uint32_t width, uint32_t height, uint32_t line_spacing,
+                                    uint32_t background_color) {
+  static constexpr uint32_t kMinBrightness = 0x33;
+  static constexpr uint32_t kColorRange = 0xFF - kMinBrightness;
+
+  if (line_spacing == 0) {
+    line_spacing = 16;
+  }
+
+  auto *pixel = reinterpret_cast<uint32_t *>(target);
+
+  for (auto y = 0; y < height; ++y) {
+    for (auto x = 0; x < width; ++x) {
+      if ((y - x + width) % line_spacing != 0) {
+        *pixel++ = background_color;
+        continue;
+      }
+
+      uint8_t r = kMinBrightness + (x * 7) % kColorRange;
+      uint8_t g = kMinBrightness + (y * 5) % kColorRange;
+      uint8_t b = kMinBrightness + ((x - y) * 3) % kColorRange;
+      uint8_t a = 0xFF;
+
+      *pixel++ = (static_cast<uint32_t>(a) << 24) | (static_cast<uint32_t>(b) << 16) | (static_cast<uint32_t>(g) << 8) |
+                 static_cast<uint32_t>(r);
+    }
+  }
+}
+
 }  // namespace PBKitPlusPlus

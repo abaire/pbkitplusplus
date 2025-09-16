@@ -34,6 +34,9 @@ int GenerateCheckerboardSurface(SDL_Surface **surface, int width, int height, ui
                                 uint32_t second_color = 0xFF000000, uint32_t checker_size = 8);
 int GenerateColoredCheckerboardSurface(SDL_Surface **surface, int width, int height, uint32_t checker_size = 4);
 
+//! Fills the target with diagonal lines where each consecutive pixel in the line is a different color.
+void GenerateRGBDiagonalLinePattern(void *target, uint32_t width, uint32_t height, uint32_t line_spacing = 8,
+                                    uint32_t background_color = 0);
 }  // namespace PBKitPlusPlus
 
 #endif  // PBKITPLUSPLUS_TEXTURE_GENERATOR_H
