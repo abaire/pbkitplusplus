@@ -62,6 +62,8 @@
 // From https://github.com/xemu-project/xemu/pull/1937#issuecomment-2692650398
 #define NV097_SET_CONTROL0_TEXTURE_PERSPECTIVE_ENABLE (1 << 20)
 
+#define NV097_SET_TEXTURE_CONTROL0_ANISOTROPY 0x30
+
 // Used to set light parameters for lights beyond 0.
 // Supported params:
 //    NV097_SET_LIGHT_AMBIENT_COLOR

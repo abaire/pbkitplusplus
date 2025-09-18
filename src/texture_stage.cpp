@@ -45,6 +45,7 @@ void TextureStage::Commit(uint32_t memory_dma_offset, uint32_t palette_dma_offse
   // NV097_SET_TEXTURE_CONTROL0
   Pushbuffer::Push(NV20_TCL_PRIMITIVE_3D_TX_ENABLE(stage_),
                    NV097_SET_TEXTURE_CONTROL0_ENABLE |
+                       MASK(NV097_SET_TEXTURE_CONTROL0_ANISOTROPY, anisotropy_power_of_two_) |
                        MASK(NV097_SET_TEXTURE_CONTROL0_ALPHA_KILL_ENABLE, alpha_kill_enable_) |
                        MASK(NV097_SET_TEXTURE_CONTROL0_MIN_LOD_CLAMP, lod_min_) |
                        MASK(NV097_SET_TEXTURE_CONTROL0_MAX_LOD_CLAMP, lod_max_) |

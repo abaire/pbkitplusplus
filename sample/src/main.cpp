@@ -234,7 +234,7 @@ static void Initialize(PBKitPlusPlus::NV2AState &state) {
 
     stage.SetEnabled(false);
     stage.SetCubemapEnable(false);
-    stage.SetFilter();
+    stage.SetFilter(0);
     stage.SetAlphaKillEnable(false);
     stage.SetColorKeyMode(PBKitPlusPlus::TextureStage::CKM_DISABLE);
     stage.SetLODClamp(0, 4095);
