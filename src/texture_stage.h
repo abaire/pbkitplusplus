@@ -155,11 +155,22 @@ class TextureStage {
     size_p_ = depth;
   }
 
-  uint32_t GetDimensionality() const;
+  [[nodiscard]] uint32_t GetDimensionality() const;
 
-  void SetFilter(uint32_t lod_bias = 0, ConvolutionKernel kernel = K_QUINCUNX, MinFilter min = MIN_BOX_LOD0,
+  /**
+   * Sets up texture filtering parameters.
+   * @param lod_bias LOD bias in 5.8 (13-bit) fixed point format
+   */
+  void SetFilter(int32_t lod_bias = 0, ConvolutionKernel kernel = K_QUINCUNX, MinFilter min = MIN_BOX_LOD0,
                  MagFilter mag = MAG_BOX_LOD0, bool signed_alpha = false, bool signed_red = false,
                  bool signed_green = false, bool signed_blue = false);
+
+  inline void SetFilter(float lod_bias = 0.f, ConvolutionKernel kernel = K_QUINCUNX, MinFilter min = MIN_BOX_LOD0,
+                        MagFilter mag = MAG_BOX_LOD0, bool signed_alpha = false, bool signed_red = false,
+                        bool signed_green = false, bool signed_blue = false) {
+    auto fixed_bias = static_cast<int32_t>((lod_bias) * (1 << 8)) & 0x1FFF;
+    SetFilter(fixed_bias, kernel, min, mag, signed_alpha, signed_red, signed_green, signed_blue);
+  }
 
   bool IsSwizzled() const { return format_.xbox_swizzled; }
   bool IsLinear() const { return format_.xbox_linear; }

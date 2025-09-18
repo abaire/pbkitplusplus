@@ -127,7 +127,7 @@ void TextureStage::Commit(uint32_t memory_dma_offset, uint32_t palette_dma_offse
   Pushbuffer::End();
 }
 
-void TextureStage::SetFilter(uint32_t lod_bias, TextureStage::ConvolutionKernel kernel, TextureStage::MinFilter min,
+void TextureStage::SetFilter(int32_t lod_bias, TextureStage::ConvolutionKernel kernel, TextureStage::MinFilter min,
                              TextureStage::MagFilter mag, bool signed_alpha, bool signed_red, bool signed_green,
                              bool signed_blue) {
   texture_filter_ =
