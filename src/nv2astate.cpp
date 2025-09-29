@@ -1421,6 +1421,21 @@ void NV2AState::SetShaderStageInput(uint32_t stage_2_input, uint32_t stage_3_inp
   Pushbuffer::End();
 }
 
+void NV2AState::SetShaderClipPlaneComparator(uint32_t stage, bool s_ge_zero, bool t_ge_zero, bool r_ge_zero,
+                                             bool q_ge_zero) {
+  uint32_t current_mode = clip_plane_mode_[stage];
+  clip_plane_mode_[stage] = s_ge_zero | (t_ge_zero << 1) | (r_ge_zero << 2) | (q_ge_zero << 3);
+
+  if (current_mode == clip_plane_mode_[stage]) {
+    return;
+  }
+
+  Pushbuffer::Begin();
+  Pushbuffer::Push(NV097_SET_SHADER_CLIP_PLANE_MODE, clip_plane_mode_[0] | (clip_plane_mode_[1] << 4) |
+                                                         (clip_plane_mode_[2] << 8) | (clip_plane_mode_[3] << 12));
+  Pushbuffer::End();
+}
+
 void NV2AState::OverrideVertexAttributeStride(NV2AState::VertexAttribute attribute, uint32_t stride) {
   for (auto i = 0; i < 16; ++i) {
     if (attribute & (1 << i)) {

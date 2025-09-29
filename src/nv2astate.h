@@ -713,6 +713,16 @@ class NV2AState {
   //! linked. E.g., to have stage2 use stage1's input and stage3 use stage2's the params would be (1, 2).
   void SetShaderStageInput(uint32_t stage_2_input = 0, uint32_t stage_3_input = 0) const;
 
+  //! Sets the comparison function for the ShaderStageProgram::STAGE_CLIP_PLANE operation.
+  //!
+  //! \param stage The texture stage whose comparator should be set.
+  //! \param s_ge_zero If true, fragments whose S component is >= 0 will be culled. If false, checks < 0.
+  //! \param t_ge_zero If true, fragments whose T component is >= 0 will be culled. If false, checks < 0.
+  //! \param r_ge_zero If true, fragments whose R component is >= 0 will be culled. If false, checks < 0.
+  //! \param q_ge_zero If true, fragments whose Q component is >= 0 will be culled. If false, checks < 0.
+  void SetShaderClipPlaneComparator(uint32_t stage, bool s_ge_zero = false, bool t_ge_zero = false,
+                                    bool r_ge_zero = false, bool q_ge_zero = false);
+
   void SetVertexBufferAttributes(uint32_t enabled_fields);
 
   //! Overrides the default calculation of stride for a vertex attribute. "0" is special cased by the hardware to cause
@@ -857,6 +867,11 @@ class NV2AState {
 
   //! Used to restore the color format after rendering to a non-framebuffer surface.
   SurfaceColorFormat framebuffer_surface_color_format_{SCF_A8R8G8B8};
+
+  //! The clip plane comparator setting for each of the 4 texture stages.
+  //! Each entry is a 4-bit value indicating whether the associated texture address component (in S, T, R, Q order)
+  //! should trigger fragment culling if < 0 (bit = 0) or >= 0 (bit = 1).
+  uint8_t clip_plane_mode_[4] = {0};
 };
 
 }  // namespace PBKitPlusPlus
