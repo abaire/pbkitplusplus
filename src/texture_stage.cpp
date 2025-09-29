@@ -111,10 +111,14 @@ void TextureStage::Commit(uint32_t memory_dma_offset, uint32_t palette_dma_offse
 
   Pushbuffer::Push(NV097_SET_TEXTURE_BORDER_COLOR, border_color_);
 
-  Pushbuffer::PushF(NV097_SET_TEXTURE_SET_BUMP_ENV_MAT, bump_env_material[0], bump_env_material[1],
-                    bump_env_material[2], bump_env_material[3]);
-  Pushbuffer::PushF(NV097_SET_TEXTURE_SET_BUMP_ENV_SCALE, bump_env_scale);
-  Pushbuffer::PushF(NV097_SET_TEXTURE_SET_BUMP_ENV_OFFSET, bump_env_offset);
+  {
+    uint32_t stage_offset = 64 * stage_;
+    Pushbuffer::PushF(NV097_SET_TEXTURE_SET_BUMP_ENV_MAT + stage_offset, bump_env_matrix[0], bump_env_matrix[1],
+                      bump_env_matrix[2], bump_env_matrix[3]);
+    Pushbuffer::PushF(NV097_SET_TEXTURE_SET_BUMP_ENV_SCALE + stage_offset, bump_env_luminance_scale);
+    Pushbuffer::PushF(NV097_SET_TEXTURE_SET_BUMP_ENV_OFFSET + stage_offset, bump_env_luminance_offset);
+  }
+
   Pushbuffer::Push(NV097_SET_TEXTURE_MATRIX_ENABLE + (4 * stage_), texture_matrix_enable_);
   if (texture_matrix_enable_) {
     Pushbuffer::Push4x4Matrix(NV097_SET_TEXTURE_MATRIX + 64 * stage_, texture_matrix_[0]);
@@ -126,6 +130,20 @@ void TextureStage::Commit(uint32_t memory_dma_offset, uint32_t palette_dma_offse
   Pushbuffer::Push(NV097_SET_TEXGEN_Q, texgen_q_);
 
   Pushbuffer::End();
+}
+
+void TextureStage::SetBumpEnv(float mat00, float mat01, float mat10, float mat11, float luminance_scale,
+                              float luminance_offset) {
+  PBKPP_ASSERT(mat00 >= -1.f && mat00 <= 1.f);
+  PBKPP_ASSERT(mat01 >= -1.f && mat01 <= 1.f);
+  PBKPP_ASSERT(mat10 >= -1.f && mat10 <= 1.f);
+  PBKPP_ASSERT(mat11 >= -1.f && mat11 <= 1.f);
+  bump_env_matrix[0] = mat00;
+  bump_env_matrix[1] = mat01;
+  bump_env_matrix[2] = mat10;
+  bump_env_matrix[3] = mat11;
+  bump_env_luminance_scale = luminance_scale;
+  bump_env_luminance_offset = luminance_offset;
 }
 
 void TextureStage::SetFilter(int32_t lod_bias, TextureStage::ConvolutionKernel kernel, TextureStage::MinFilter min,

@@ -80,13 +80,9 @@ class TextureStage {
     cylinder_wrap_[2] = false;
     cylinder_wrap_[3] = false;
 
-    bump_env_material[0] = 0.0f;
-    bump_env_material[1] = 0.0f;
-    bump_env_material[2] = 0.0f;
-    bump_env_material[3] = 0.0f;
-
-    bump_env_scale = 0.0f;
-    bump_env_offset = 0.0f;
+    memset(bump_env_matrix, 0, sizeof(bump_env_matrix));
+    bump_env_luminance_scale = 0.f;
+    bump_env_luminance_offset = 0.f;
 
     texture_matrix_enable_ = false;
 
@@ -145,14 +141,16 @@ class TextureStage {
   // Determines whether texels along the border retrieve their color from border_color_ or the texture.
   void SetBorderFromColor(bool val = true) { border_source_color_ = val; }
 
-  void SetBumpEnv(float x, float y, float z, float w, float scale, float offset = 0.0f) {
-    bump_env_material[0] = x;
-    bump_env_material[1] = y;
-    bump_env_material[2] = z;
-    bump_env_material[3] = w;
-    bump_env_scale = scale;
-    bump_env_offset = offset;
-  }
+  //! Sets the bump mapping environment matrix and luminance scale/offset values for the given texture stage.
+  //!
+  //! \param mat00 - Matrix element 00. Must be in the range -1, 1 (inclusive)
+  //! \param mat01 - Matrix element 01. Must be in the range -1, 1 (inclusive)
+  //! \param mat10 - Matrix element 10. Must be in the range -1, 1 (inclusive)
+  //! \param mat11 - Matrix element 11. Must be in the range -1, 1 (inclusive)
+  //! \param luminance_scale
+  //! \param luminance_offset
+  void SetBumpEnv(float mat00, float mat01, float mat10, float mat11, float luminance_scale = 1.f,
+                  float luminance_offset = 0.0f);
 
   void SetTextureDimensions(uint32_t u, uint32_t v, uint32_t p = 1) {
     size_u_ = u;
@@ -260,9 +258,9 @@ class TextureStage {
   WrapMode wrap_modes_[3]{WRAP_CLAMP_TO_EDGE, WRAP_CLAMP_TO_EDGE, WRAP_CLAMP_TO_EDGE};
   bool cylinder_wrap_[4] = {false};
 
-  float bump_env_material[4] = {0.0f, 0.0f, 0.0f, 0.0f};
-  float bump_env_scale{0.0f};
-  float bump_env_offset{0.0f};
+  float bump_env_matrix[4]{0.0f};
+  float bump_env_luminance_scale{0.0f};
+  float bump_env_luminance_offset{0.0f};
 
   bool texture_matrix_enable_{false};
   matrix4_t texture_matrix_;
