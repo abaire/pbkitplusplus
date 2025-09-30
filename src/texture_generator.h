@@ -46,6 +46,29 @@ int GenerateColoredCheckerboardSurface(SDL_Surface **surface, int width, int hei
 //! Fills the target with diagonal lines where each consecutive pixel in the line is a different color.
 void GenerateRGBDiagonalLinePattern(void *target, uint32_t width, uint32_t height, uint32_t line_spacing = 8,
                                     uint32_t background_color = 0);
+
+//! Generates a radial gradient with brighter colors near edges.
+//!
+//! \param target Buffer to be populated
+//! \param width  Width of the buffer in pixels
+//! \param height Height of the buffer in pixels
+//! \param color_mask Mask used to tint the gradient
+//! \param alpha Alpha value that should be assigned to each pixel
+//! \param linear If true, the gradient is linear from 0 at the center to 1 at edges. Otherwise ramp from 0 quickly.
+void GenerateRGBRadialGradient(void *target, int width, int height, uint32_t color_mask = 0xFFFFFF,
+                               uint8_t alpha = 0xFF, bool linear = true);
+
+//! Generates a radial gradient with brighter colors near edges.
+//!
+//! \param target Buffer to be populated
+//! \param width  Width of the buffer in pixels
+//! \param height Height of the buffer in pixels
+//! \param color_mask Mask used to tint the gradient
+//! \param alpha Alpha value that should be assigned to each pixel
+//! \param linear If true, the gradient is linear from 0 at the center to 1 at edges. Otherwise ramp from 0 quickly.
+void GenerateSwizzledRGBRadialGradient(void *target, int width, int height, uint32_t color_mask = 0xFFFFFF,
+                                       uint8_t alpha = 0xFF, bool linear = true);
+
 }  // namespace PBKitPlusPlus
 
 #endif  // PBKITPLUSPLUS_TEXTURE_GENERATOR_H

@@ -1,5 +1,9 @@
 #include "texture_generator.h"
 
+#include <algorithm>
+#include <cmath>
+#include <cstdint>
+
 #include "pbkpp_assert.h"
 #include "xbox-swizzle/swizzle.h"
 
@@ -133,9 +137,92 @@ void GenerateRGBRadialATestPattern(void *target, uint32_t width, uint32_t height
 void GenerateSwizzledRGBRadialATestPattern(void *target, uint32_t width, uint32_t height) {
   const uint32_t size = height * width * 4;
   auto temp_buffer = new uint8_t[size];
-  memcpy(temp_buffer, target, size);
 
   GenerateRGBRadialATestPattern(temp_buffer, width, height);
+
+  swizzle_rect(temp_buffer, width, height, reinterpret_cast<uint8_t *>(target), width * 4, 4);
+  delete[] temp_buffer;
+}
+
+void GenerateRGBRadialGradient(void *target, int width, int height, uint32_t color_mask, uint8_t alpha, bool linear) {
+  PBKPP_ASSERT(target && "target must not be NULL");
+  PBKPP_ASSERT(width && "width must be > 0");
+  PBKPP_ASSERT(height && "height must be > 0");
+
+  const float centerX = static_cast<float>(width - 1) / 2.0f;
+  const float centerY = static_cast<float>(height - 1) / 2.0f;
+  const float maxDist = sqrt(centerX * centerX + centerY * centerY);
+
+  const bool r_enabled = (color_mask & 0x000000FF);
+  const bool g_enabled = (color_mask & 0x0000FF00);
+  const bool b_enabled = (color_mask & 0x00FF0000);
+  const bool all_channels_enabled = r_enabled && g_enabled && b_enabled;
+
+  auto pixel = reinterpret_cast<uint32_t *>(target);
+  for (int y = 0; y < height; ++y) {
+    for (int x = 0; x < width; ++x, ++pixel) {
+      const float dx = static_cast<float>(x) - centerX;
+      const float dy = static_cast<float>(y) - centerY;
+      const float dist = sqrt(dx * dx + dy * dy);
+      const float normDist = dist / maxDist;
+
+      float r_f;
+      float g_f;
+      float b_f;
+
+      if (linear) {
+        r_f = (static_cast<float>(x) / static_cast<float>(width)) * normDist;
+        g_f = (static_cast<float>(y) / static_cast<float>(height)) * normDist;
+        b_f = 0.75f * normDist;
+      } else {
+        static constexpr float kSplitPoint = 0.25f;
+        static constexpr float kBrightnessAtSplit = 0.5f;
+
+        float brightness_mod;
+        if (normDist < kSplitPoint) {
+          // Ramp 1 (Fast): Linearly map distance [0, kSplitPoint] to brightness [0, kBrightnessAtSplit].
+          brightness_mod = (normDist / kSplitPoint) * kBrightnessAtSplit;
+        } else {
+          // Ramp 2 (Slower): Linearly map distance [kSplitPoint, 1.0] to brightness [kBrightnessAtSplit, 1.0].
+          const float remaining_dist_percent = (normDist - kSplitPoint) / (1.0f - kSplitPoint);
+          const float remaining_brightness = 1.0f - kBrightnessAtSplit;
+          brightness_mod = kBrightnessAtSplit + (remaining_dist_percent * remaining_brightness);
+        }
+
+        // Use the modified brightness for the color calculation instead of the original normDist.
+        r_f = (static_cast<float>(x) / static_cast<float>(width)) * brightness_mod;
+        g_f = (static_cast<float>(y) / static_cast<float>(height)) * brightness_mod;
+        b_f = 0.75f * brightness_mod;
+      }
+      auto r_orig = static_cast<uint8_t>(r_f * 255);
+      auto g_orig = static_cast<uint8_t>(g_f * 255);
+      auto b_orig = static_cast<uint8_t>(b_f * 255);
+
+      uint8_t r_final, g_final, b_final;
+
+      if (all_channels_enabled) {
+        r_final = r_orig;
+        g_final = g_orig;
+        b_final = b_orig;
+      } else {
+        uint8_t intensity = ::std::max({r_orig, g_orig, b_orig});
+
+        r_final = r_enabled ? intensity : 0;
+        g_final = g_enabled ? intensity : 0;
+        b_final = b_enabled ? intensity : 0;
+      }
+
+      *pixel = (r_final) | (g_final << 8) | (b_final << 16) | (alpha << 24);
+    }
+  }
+}
+
+void GenerateSwizzledRGBRadialGradient(void *target, int width, int height, uint32_t color_mask, uint8_t alpha,
+                                       bool linear) {
+  const uint32_t size = height * width * 4;
+  auto temp_buffer = new uint8_t[size];
+
+  GenerateRGBRadialGradient(temp_buffer, width, height, color_mask, alpha, linear);
 
   swizzle_rect(temp_buffer, width, height, reinterpret_cast<uint8_t *>(target), width * 4, 4);
   delete[] temp_buffer;
