@@ -63,6 +63,17 @@ void GenerateRGBTestPattern(void *target, uint32_t width, uint32_t height, uint8
   GenerateRGBTestPattern(target, width, height, alpha, width * 4);
 }
 
+void GenerateSwizzledRGBTestPattern(void *target, uint32_t width, uint32_t height, uint8_t alpha) {
+  const uint32_t size = height * width * 4;
+  auto temp_buffer = new uint8_t[size];
+  memcpy(temp_buffer, target, size);
+
+  GenerateRGBTestPattern(temp_buffer, width, height, alpha, width * 4);
+
+  swizzle_rect(temp_buffer, width, height, reinterpret_cast<uint8_t *>(target), width * 4, 4);
+  delete[] temp_buffer;
+}
+
 void GenerateRGBATestPattern(void *target, uint32_t width, uint32_t height) {
   auto pixels = static_cast<uint32_t *>(target);
   for (uint32_t y = 0; y < height; ++y) {
@@ -73,6 +84,17 @@ void GenerateRGBATestPattern(void *target, uint32_t width, uint32_t height) {
       *pixels = y_normal + (x_normal << 8) + ((255 - y_normal) << 16) + ((x_normal + y_normal) << 24);
     }
   }
+}
+
+void GenerateSwizzledRGBATestPattern(void *target, uint32_t width, uint32_t height) {
+  const uint32_t size = height * width * 4;
+  auto temp_buffer = new uint8_t[size];
+  memcpy(temp_buffer, target, size);
+
+  GenerateRGBATestPattern(temp_buffer, width, height);
+
+  swizzle_rect(temp_buffer, width, height, reinterpret_cast<uint8_t *>(target), width * 4, 4);
+  delete[] temp_buffer;
 }
 
 void GenerateRGBRadialATestPattern(void *target, uint32_t width, uint32_t height) {
@@ -106,6 +128,17 @@ void GenerateRGBRadialATestPattern(void *target, uint32_t width, uint32_t height
       *pixels = (*pixels & 0x00FFFFFF) + (alpha << 24);
     }
   }
+}
+
+void GenerateSwizzledRGBRadialATestPattern(void *target, uint32_t width, uint32_t height) {
+  const uint32_t size = height * width * 4;
+  auto temp_buffer = new uint8_t[size];
+  memcpy(temp_buffer, target, size);
+
+  GenerateRGBRadialATestPattern(temp_buffer, width, height);
+
+  swizzle_rect(temp_buffer, width, height, reinterpret_cast<uint8_t *>(target), width * 4, 4);
+  delete[] temp_buffer;
 }
 
 int GenerateSurface(SDL_Surface **surface, int width, int height) {
