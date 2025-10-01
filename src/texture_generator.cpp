@@ -390,4 +390,42 @@ void GenerateRGBDiagonalLinePattern(void *target, uint32_t width, uint32_t heigh
   }
 }
 
+void GenerateMaxContrastNoisePattern(void *target, int width, int height, uint32_t seed_rgb, uint8_t alpha) {
+  auto buffer = reinterpret_cast<uint32_t *>(target);
+
+  uint8_t seed_r = (seed_rgb >> 16) & 0xFF;
+  uint8_t seed_g = (seed_rgb >> 8) & 0xFF;
+  uint8_t seed_b = seed_rgb & 0xFF;
+
+  for (int y = 0; y < height; ++y) {
+    for (int x = 0; x < width; ++x) {
+      // Pattern for the Red channel: alternates every pixel horizontally (vertical stripes).
+      uint8_t r = (x % 2) * 255;
+
+      // Pattern for the Green channel: alternates every pixel vertically (horizontal stripes).
+      uint8_t g = (y % 2) * 255;
+
+      // Pattern for the Blue channel: a 2x2 checkerboard pattern.
+      // Integer division (x/2, y/2) creates 2x2 blocks.
+      uint8_t b = ((x / 2 + y / 2) % 2) * 255;
+
+      r ^= seed_r;
+      g ^= seed_g;
+      b ^= seed_b;
+
+      buffer[y * width + x] = (alpha << 24) | (b << 16) | (g << 8) | r;
+    }
+  }
+}
+
+void GenerateSwizzledRGBMaxContrastNoisePattern(void *target, int width, int height, uint32_t seed_rgb, uint8_t alpha) {
+  const uint32_t size = height * width * 4;
+  auto temp_buffer = new uint8_t[size];
+
+  GenerateMaxContrastNoisePattern(temp_buffer, width, height, seed_rgb, alpha);
+
+  swizzle_rect(temp_buffer, width, height, reinterpret_cast<uint8_t *>(target), width * 4, 4);
+  delete[] temp_buffer;
+}
+
 }  // namespace PBKitPlusPlus

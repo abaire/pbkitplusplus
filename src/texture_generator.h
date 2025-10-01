@@ -69,6 +69,34 @@ void GenerateRGBRadialGradient(void *target, int width, int height, uint32_t col
 void GenerateSwizzledRGBRadialGradient(void *target, int width, int height, uint32_t color_mask = 0xFFFFFF,
                                        uint8_t alpha = 0xFF, bool linear = true);
 
+//! Fills a 32-bit RGBA buffer to maximize local contrast.
+//!
+//! This function generates a deterministic pattern where each primary color channel (R, G, B)
+//! is turned on or off based on different high-frequency patterns derived from the
+//! pixel coordinates. This ensures that any two adjacent pixels have a large
+//! difference in their color and brightness values.
+//!
+//! @param buffer A pointer to the 32-bit RGBA buffer to be filled.
+//! @param width The width of the image in pixels.
+//! @param height The height of the image in pixels.
+//! @param alpha The alpha value set for every pixel in the region
+void GenerateRGBMaxContrastNoisePattern(void *target, int width, int height, uint32_t seed_rgb = 0,
+                                        uint8_t alpha = 0xFF);
+
+//! Fills a 32-bit RGBA buffer to maximize local contrast.
+//!
+//! This function generates a deterministic pattern where each primary color channel (R, G, B)
+//! is turned on or off based on different high-frequency patterns derived from the
+//! pixel coordinates. This ensures that any two adjacent pixels have a large
+//! difference in their color and brightness values.
+//!
+//! @param buffer A pointer to the 32-bit RGBA buffer to be filled.
+//! @param width The width of the image in pixels.
+//! @param height The height of the image in pixels.
+//! @param alpha The alpha value set for every pixel in the region
+void GenerateSwizzledRGBMaxContrastNoisePattern(void *target, int width, int height, uint32_t seed_rgb = 0,
+                                                uint8_t alpha = 0xFF);
+
 }  // namespace PBKitPlusPlus
 
 #endif  // PBKITPLUSPLUS_TEXTURE_GENERATOR_H
