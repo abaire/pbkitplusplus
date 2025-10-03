@@ -517,6 +517,34 @@ class NV2AState {
     End();
   }
 
+  void DrawSwizzledTexturedScreenQuad(float left, float top, float right, float bottom, float world_z) const {
+    Begin(PRIMITIVE_QUADS);
+    SetTexCoord0(0.f, 0.f);
+    SetTexCoord1(0.f, 0.f);
+    SetTexCoord2(0.f, 0.f);
+    SetTexCoord3(0.f, 0.f);
+    SetScreenVertex(left, top, world_z);
+
+    SetTexCoord0(1.f, 0.f);
+    SetTexCoord1(1.f, 0.f);
+    SetTexCoord2(1.f, 0.f);
+    SetTexCoord3(1.f, 0.f);
+    SetScreenVertex(right, top, world_z);
+
+    SetTexCoord0(1.f, 1.f);
+    SetTexCoord1(1.f, 1.f);
+    SetTexCoord2(1.f, 1.f);
+    SetTexCoord3(1.f, 1.f);
+    SetScreenVertex(right, bottom, world_z);
+
+    SetTexCoord0(0.f, 1.f);
+    SetTexCoord1(0.f, 1.f);
+    SetTexCoord2(0.f, 1.f);
+    SetTexCoord3(0.f, 1.f);
+    SetScreenVertex(left, bottom, world_z);
+    End();
+  }
+
   //! Unprojects the given coordinates and calls SetVertex.
   void SetScreenVertex(float x, float y, float world_z) const {
     vector_t screen{x, y, world_z, 1.f};
