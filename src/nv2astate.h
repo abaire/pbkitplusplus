@@ -517,6 +517,7 @@ class NV2AState {
     End();
   }
 
+  /** Renders a simple quad to the given post-projection coordinates, setting texcoords for a swizzled texture image. */
   void DrawSwizzledTexturedScreenQuad(float left, float top, float right, float bottom, float world_z) const {
     Begin(PRIMITIVE_QUADS);
     SetTexCoord0(0.f, 0.f);
@@ -541,6 +542,36 @@ class NV2AState {
     SetTexCoord1(0.f, 1.f);
     SetTexCoord2(0.f, 1.f);
     SetTexCoord3(0.f, 1.f);
+    SetScreenVertex(left, bottom, world_z);
+    End();
+  }
+
+  /** Renders a simple quad to the given post-projection coordinates, setting texcoords for a linear texture image. */
+  void DrawTexturedScreenQuad(float left, float top, float right, float bottom, float world_z, uint32_t image_width,
+                              uint32_t image_height) const {
+    Begin(PRIMITIVE_QUADS);
+    SetTexCoord0(0.f, 0.f);
+    SetTexCoord1(0.f, 0.f);
+    SetTexCoord2(0.f, 0.f);
+    SetTexCoord3(0.f, 0.f);
+    SetScreenVertex(left, top, world_z);
+
+    SetTexCoord0(static_cast<float>(image_width), 0.f);
+    SetTexCoord1(static_cast<float>(image_width), 0.f);
+    SetTexCoord2(static_cast<float>(image_width), 0.f);
+    SetTexCoord3(static_cast<float>(image_width), 0.f);
+    SetScreenVertex(right, top, world_z);
+
+    SetTexCoord0(static_cast<float>(image_width), static_cast<float>(image_height));
+    SetTexCoord1(static_cast<float>(image_width), static_cast<float>(image_height));
+    SetTexCoord2(static_cast<float>(image_width), static_cast<float>(image_height));
+    SetTexCoord3(static_cast<float>(image_width), static_cast<float>(image_height));
+    SetScreenVertex(right, bottom, world_z);
+
+    SetTexCoord0(0.f, static_cast<float>(image_height));
+    SetTexCoord1(0.f, static_cast<float>(image_height));
+    SetTexCoord2(0.f, static_cast<float>(image_height));
+    SetTexCoord3(0.f, static_cast<float>(image_height));
     SetScreenVertex(left, bottom, world_z);
     End();
   }
