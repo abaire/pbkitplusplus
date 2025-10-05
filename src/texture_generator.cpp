@@ -428,4 +428,54 @@ void GenerateSwizzledRGBMaxContrastNoisePattern(void *target, int width, int hei
   delete[] temp_buffer;
 }
 
+void GenerateRGBA444RadialAlphaPattern(void *target, uint32_t width, uint32_t height) {
+  PBKPP_ASSERT(target);
+  PBKPP_ASSERT(width);
+  PBKPP_ASSERT(height);
+
+  auto buffer = static_cast<uint16_t *>(target);
+
+  const auto width_minus_1 = static_cast<float>(width - 1);
+  const auto height_minus_1 = static_cast<float>(height - 1);
+  const auto cx = width_minus_1 / 2.0f;
+  const auto cy = height_minus_1 / 2.0f;
+
+  const float max_distance = cx * cx + cy * cy;
+  for (int y = 0; y < height; ++y) {
+    auto dy = static_cast<float>(y) - cx;
+
+    for (int x = 0; x < width; ++x) {
+      auto dx = static_cast<float>(x) - cx;
+      auto distance = dx * dx + dy * dy;
+      auto alpha = static_cast<uint16_t>(15.0f * (1.f - distance / max_distance));
+
+      const float fx = (width > 1) ? static_cast<float>(x) / width_minus_1 : 0.0f;
+      const float fy = (height > 1) ? static_cast<float>(y) / height_minus_1 : 0.0f;
+
+      // Channel 1 (0xF00 component): Varies vertically from 0 at the top to 0xF at the bottom.
+      const auto c1_val = static_cast<uint16_t>(15.0f * fy);
+
+      // Channel 2 (0x0F0 component): Varies diagonally.
+      const float c2_top = 15.0f * fx;
+      const float c2_bottom = 15.0f * (1.0f - fx);
+      const auto c2_val = static_cast<uint16_t>(c2_top * (1.0f - fy) + c2_bottom * fy);
+
+      // Channel 3 (0x00F component): Varies horizontally from 0xF at the left to 0 at the right.
+      const auto c3_val = static_cast<uint16_t>(15.0f * (1.0f - fx));
+
+      *buffer++ = ((alpha & 0xF) << 12) | (c1_val << 8) | (c2_val << 4) | c3_val;
+    }
+  }
+}
+
+void GenerateSwizzledRGBA444RadialAlphaPattern(void *target, uint32_t width, uint32_t height) {
+  const uint32_t size = height * width * 2;
+  auto temp_buffer = new uint8_t[size];
+
+  GenerateRGBA444RadialAlphaPattern(temp_buffer, width, height);
+
+  swizzle_rect(temp_buffer, width, height, reinterpret_cast<uint8_t *>(target), width * 2, 2);
+  delete[] temp_buffer;
+}
+
 }  // namespace PBKitPlusPlus

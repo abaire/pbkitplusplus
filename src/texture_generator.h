@@ -97,6 +97,38 @@ void GenerateRGBMaxContrastNoisePattern(void *target, int width, int height, uin
 void GenerateSwizzledRGBMaxContrastNoisePattern(void *target, int width, int height, uint32_t seed_rgb = 0,
                                                 uint8_t alpha = 0xFF);
 
+/**
+ * @brief Generates a test pattern in a 16-bit buffer.
+ *
+ * The high 4 bits (15-12) form a radial pattern based on the distance from the center.
+ * The low 12 bits (11-0) form a gradient based on four corner values:
+ * - Top-Left:     0x00F (lowest 4 bits are 0xF)
+ * - Top-Right:    0x0F0 (middle 4 bits are 0xF)
+ * - Bottom-Right: 0xF00 (highest 4 bits of the low 12 are 0xF)
+ * - Bottom-Left:  0xFFF (all 12 bits are 0xF)
+ *
+ * @param buffer A pointer to the 16-bit buffer to populate.
+ * @param width The width of the image in pixels.
+ * @param height The height of the image in pixels.
+ */
+void GenerateRGBA444RadialAlphaPattern(void *target, uint32_t width, uint32_t height);
+
+/**
+ * @brief Generates a test pattern in a 16-bit buffer.
+ *
+ * The high 4 bits (15-12) form a radial pattern based on the distance from the center.
+ * The low 12 bits (11-0) form a gradient based on four corner values:
+ * - Top-Left:     0x00F (lowest 4 bits are 0xF)
+ * - Top-Right:    0x0F0 (middle 4 bits are 0xF)
+ * - Bottom-Right: 0xF00 (highest 4 bits of the low 12 are 0xF)
+ * - Bottom-Left:  0xFFF (all 12 bits are 0xF)
+ *
+ * @param buffer A pointer to the 16-bit buffer to populate.
+ * @param width The width of the image in pixels.
+ * @param height The height of the image in pixels.
+ */
+void GenerateSwizzledRGBA444RadialAlphaPattern(void *target, uint32_t width, uint32_t height);
+
 }  // namespace PBKitPlusPlus
 
 #endif  // PBKITPLUSPLUS_TEXTURE_GENERATOR_H
