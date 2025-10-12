@@ -47,13 +47,13 @@ void GenerateSwizzledRGBACheckerboard(void *target, uint32_t x_offset, uint32_t 
 }
 
 static void GenerateRGBTestPattern(void *target, uint32_t width, uint32_t height, uint8_t alpha, uint32_t pitch) {
-  auto row = static_cast<uint32_t *>(target);
+  auto row = static_cast<uint8_t *>(target);
 
   const uint32_t alpha_channel = static_cast<uint32_t>(alpha) << 24;
   for (uint32_t y = 0; y < height; ++y) {
     auto y_normal = static_cast<uint32_t>(static_cast<float>(y) * 255.0f / static_cast<float>(height));
 
-    auto pixels = row;
+    auto pixels = reinterpret_cast<uint32_t *>(row);
     for (uint32_t x = 0; x < width; ++x, ++pixels) {
       auto x_normal = static_cast<uint32_t>(static_cast<float>(x) * 255.0f / static_cast<float>(width));
       *pixels = y_normal + (x_normal << 8) + ((255 - y_normal) << 16) + alpha_channel;
@@ -70,7 +70,6 @@ void GenerateRGBTestPattern(void *target, uint32_t width, uint32_t height, uint8
 void GenerateSwizzledRGBTestPattern(void *target, uint32_t width, uint32_t height, uint8_t alpha) {
   const uint32_t size = height * width * 4;
   auto temp_buffer = new uint8_t[size];
-  memcpy(temp_buffer, target, size);
 
   GenerateRGBTestPattern(temp_buffer, width, height, alpha, width * 4);
 
@@ -93,7 +92,6 @@ void GenerateRGBATestPattern(void *target, uint32_t width, uint32_t height) {
 void GenerateSwizzledRGBATestPattern(void *target, uint32_t width, uint32_t height) {
   const uint32_t size = height * width * 4;
   auto temp_buffer = new uint8_t[size];
-  memcpy(temp_buffer, target, size);
 
   GenerateRGBATestPattern(temp_buffer, width, height);
 
@@ -112,8 +110,8 @@ void GenerateRGBRadialATestPattern(void *target, uint32_t width, uint32_t height
 
   auto ur_pixels = pixels + half_width;
 
-  GenerateRGBTestPattern(pixels, half_width, half_height, 0x00, width);
-  GenerateRGBTestPattern(ur_pixels, half_width, half_height, 0x00, width);
+  GenerateRGBTestPattern(pixels, half_width, half_height, 0x00, width * 4);
+  GenerateRGBTestPattern(ur_pixels, half_width, half_height, 0x00, width * 4);
 
   auto ll_pixels = pixels + half_height * width;
   memcpy(ll_pixels, pixels, width * half_height * 4);
