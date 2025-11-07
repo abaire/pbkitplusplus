@@ -336,7 +336,6 @@ void NV2AState::DrawInlineBuffer(uint32_t enabled_vertex_fields, DrawPrimitive p
   }
 
   PBKPP_ASSERT(vertex_buffer_ && "Vertex buffer must be set before calling DrawInlineBuffer.");
-  SetVertexBufferAttributes(enabled_vertex_fields);
 
   PBKitFlushPushbufer();
 
