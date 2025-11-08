@@ -666,7 +666,7 @@ class NV2AState {
   void SetBlendColorConstant(uint32_t color) const;
 
   //! Sets the alpha reference value (NV097_SET_ALPHA_REF) used by NV097_SET_ALPHA_FUNC.
-  void SetAlphaReference(uint32_t color) const;
+  void SetAlphaReference(uint32_t alpha_byte) const;
 
   //! Sets the alpha function used to mask writes based on alpha values.
   void SetAlphaFunc(bool enable = true, uint32_t func = NV097_SET_ALPHA_FUNC_V_ALWAYS) const;

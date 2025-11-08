@@ -656,8 +656,12 @@ void NV2AState::SetFogCoord(float fc) const {
 }
 
 void NV2AState::SetPointSize(float ps) const {
+  auto size = static_cast<uint32_t>(ps * 8.f);
+  if (size > 0x1FF) {
+    size = 0x1FF;
+  }
   Pushbuffer::Begin();
-  Pushbuffer::Push(NV097_SET_POINT_SIZE, static_cast<int>(ps * 8.f));
+  Pushbuffer::Push(NV097_SET_POINT_SIZE, size);
   Pushbuffer::End();
 }
 
