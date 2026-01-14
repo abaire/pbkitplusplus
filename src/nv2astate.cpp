@@ -308,7 +308,7 @@ void NV2AState::DrawArrays(uint32_t enabled_vertex_fields, DrawPrimitive primiti
     auto remaining = num_vertices - start;
     auto count = remaining < kVerticesPerPush ? remaining : kVerticesPerPush;
 
-    Pushbuffer::Push(NV2A_SUPPRESS_COMMAND_INCREMENT(NV097_DRAW_ARRAYS),
+    Pushbuffer::Push(NV097_DRAW_ARRAYS,
                      MASK(NV097_DRAW_ARRAYS_COUNT, count - 1) | MASK(NV097_DRAW_ARRAYS_START_INDEX, start));
 
     start += count;
