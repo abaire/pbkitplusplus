@@ -335,6 +335,24 @@ int TextureStage::SetTexture(const SDL_Surface *surface, uint8_t *memory_base) c
         }
       } break;
 
+      case NV097_SET_TEXTURE_FORMAT_COLOR_SZ_R6G5B5: {
+        uint32_t *source = pixels;
+        swizzle_bpp = 2;
+        swizzle_pitch = swizzle_w * swizzle_bpp;
+        converted = new uint8_t[swizzle_pitch * swizzle_h * swizzle_depth];
+        dest = converted;
+
+        for (int y = 0; y < surface->h; ++y) {
+          for (int x = 0; x < surface->w; ++x, ++source) {
+            uint8_t red, green, blue, alpha;
+            SDL_GetRGBA(*source, surface->format, &red, &green, &blue, &alpha);
+            uint16_t value = ((red & 0xFC) << 8) | ((green & 0xF8) << 2) | (blue >> 3);
+            *dest++ = value & 0xFF;
+            *dest++ = value >> 8;
+          }
+        }
+      } break;
+
       case NV097_SET_TEXTURE_FORMAT_COLOR_L_DXT1_A1R5G5B5: {
         uint32_t *source = pixels;
         for (int y = 0; y < surface->h; y += 4) {
