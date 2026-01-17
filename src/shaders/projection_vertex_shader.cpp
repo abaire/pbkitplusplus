@@ -55,6 +55,7 @@ void ProjectionVertexShader::LookTo(const vector_t &camera_position, const vecto
   vector_t y_axis;
   y_axis[3] = 1.0f;
   VectorCrossVector(z_axis, x_axis, y_axis);
+  VectorNormalize(y_axis);
 
   memset(view_matrix_, 0, sizeof(view_matrix_));
   view_matrix_[0][0] = x_axis[0];
