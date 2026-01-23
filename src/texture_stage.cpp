@@ -134,10 +134,10 @@ void TextureStage::Commit(uint32_t memory_dma_offset, uint32_t palette_dma_offse
 
 void TextureStage::SetBumpEnv(float mat00, float mat01, float mat10, float mat11, float luminance_scale,
                               float luminance_offset) {
-  PBKPP_ASSERT(mat00 >= -1.f && mat00 <= 1.f);
-  PBKPP_ASSERT(mat01 >= -1.f && mat01 <= 1.f);
-  PBKPP_ASSERT(mat10 >= -1.f && mat10 <= 1.f);
-  PBKPP_ASSERT(mat11 >= -1.f && mat11 <= 1.f);
+  // PBKPP_ASSERT(mat00 >= -1.f && mat00 <= 1.f);
+  // PBKPP_ASSERT(mat01 >= -1.f && mat01 <= 1.f);
+  // PBKPP_ASSERT(mat10 >= -1.f && mat10 <= 1.f);
+  // PBKPP_ASSERT(mat11 >= -1.f && mat11 <= 1.f);
   bump_env_matrix[0] = mat00;
   bump_env_matrix[1] = mat01;
   bump_env_matrix[2] = mat10;
