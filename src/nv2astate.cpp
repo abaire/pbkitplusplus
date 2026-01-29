@@ -254,17 +254,23 @@ void NV2AState::SetVertexBufferAttributes(uint32_t enabled_fields) {
 
   set(POSITION, NV2A_VERTEX_ATTR_POSITION, NV097_SET_VERTEX_DATA_ARRAY_FORMAT_TYPE_F, vertex_buffer_->position_count_,
       &vptr[0].pos);
-  // TODO: Support multi-component weights.
-  set(WEIGHT, NV2A_VERTEX_ATTR_WEIGHT, NV097_SET_VERTEX_DATA_ARRAY_FORMAT_TYPE_F, 1, &vptr[0].weight);
-  set(NORMAL, NV2A_VERTEX_ATTR_NORMAL, NV097_SET_VERTEX_DATA_ARRAY_FORMAT_TYPE_F, 3, &vptr[0].normal);
-  set(DIFFUSE, NV2A_VERTEX_ATTR_DIFFUSE, NV097_SET_VERTEX_DATA_ARRAY_FORMAT_TYPE_F, 4, &vptr[0].diffuse);
-  set(SPECULAR, NV2A_VERTEX_ATTR_SPECULAR, NV097_SET_VERTEX_DATA_ARRAY_FORMAT_TYPE_F, 4, &vptr[0].specular);
-  set(FOG_COORD, NV2A_VERTEX_ATTR_FOG_COORD, NV097_SET_VERTEX_DATA_ARRAY_FORMAT_TYPE_F, 1, &vptr[0].fog_coord);
-  set(POINT_SIZE, NV2A_VERTEX_ATTR_POINT_SIZE, NV097_SET_VERTEX_DATA_ARRAY_FORMAT_TYPE_F, 1, &vptr[0].point_size);
+  set(WEIGHT, NV2A_VERTEX_ATTR_WEIGHT, NV097_SET_VERTEX_DATA_ARRAY_FORMAT_TYPE_F, vertex_buffer_->weight_count_,
+      &vptr[0].weight);
+  set(NORMAL, NV2A_VERTEX_ATTR_NORMAL, NV097_SET_VERTEX_DATA_ARRAY_FORMAT_TYPE_F, vertex_buffer_->normal_count_,
+      &vptr[0].normal);
+  set(DIFFUSE, NV2A_VERTEX_ATTR_DIFFUSE, NV097_SET_VERTEX_DATA_ARRAY_FORMAT_TYPE_F, vertex_buffer_->diffuse_count_,
+      &vptr[0].diffuse);
+  set(SPECULAR, NV2A_VERTEX_ATTR_SPECULAR, NV097_SET_VERTEX_DATA_ARRAY_FORMAT_TYPE_F, vertex_buffer_->specular_count_,
+      &vptr[0].specular);
+  set(FOG_COORD, NV2A_VERTEX_ATTR_FOG_COORD, NV097_SET_VERTEX_DATA_ARRAY_FORMAT_TYPE_F,
+      vertex_buffer_->fog_coord_count_, &vptr[0].fog_coord);
+  set(POINT_SIZE, NV2A_VERTEX_ATTR_POINT_SIZE, NV097_SET_VERTEX_DATA_ARRAY_FORMAT_TYPE_F,
+      vertex_buffer_->point_size_count_, &vptr[0].point_size);
 
-  set(BACK_DIFFUSE, NV2A_VERTEX_ATTR_BACK_DIFFUSE, NV097_SET_VERTEX_DATA_ARRAY_FORMAT_TYPE_F, 4, &vptr[0].back_diffuse);
-  set(BACK_SPECULAR, NV2A_VERTEX_ATTR_BACK_SPECULAR, NV097_SET_VERTEX_DATA_ARRAY_FORMAT_TYPE_F, 4,
-      &vptr[0].back_specular);
+  set(BACK_DIFFUSE, NV2A_VERTEX_ATTR_BACK_DIFFUSE, NV097_SET_VERTEX_DATA_ARRAY_FORMAT_TYPE_F,
+      vertex_buffer_->back_diffuse_count_, &vptr[0].back_diffuse);
+  set(BACK_SPECULAR, NV2A_VERTEX_ATTR_BACK_SPECULAR, NV097_SET_VERTEX_DATA_ARRAY_FORMAT_TYPE_F,
+      vertex_buffer_->back_specular_count_, &vptr[0].back_specular);
 
   set(TEXCOORD0, NV2A_VERTEX_ATTR_TEXTURE0, NV097_SET_VERTEX_DATA_ARRAY_FORMAT_TYPE_F,
       vertex_buffer_->tex0_coord_count_, &vptr[0].texcoord0);
@@ -349,7 +355,17 @@ void NV2AState::DrawInlineBuffer(uint32_t enabled_vertex_fields, DrawPrimitive p
     }
 
     if (enabled_vertex_fields & WEIGHT) {
-      SetWeight(vertex->weight);
+      if (vertex_buffer_->weight_count_ == 4) {
+        SetWeight(vertex->weight[0], vertex->weight[1], vertex->weight[2], vertex->weight[3]);
+      } else if (vertex_buffer_->weight_count_ == 3) {
+        SetWeight(vertex->weight[0], vertex->weight[1], vertex->weight[2]);
+      } else if (vertex_buffer_->weight_count_ == 2) {
+        SetWeight(vertex->weight[0], vertex->weight[1]);
+      } else if (vertex_buffer_->weight_count_ == 1) {
+        SetWeight(vertex->weight[0]);
+      } else {
+        PBKPP_ASSERT(!"Invalid weight count");
+      }
     }
     if (enabled_vertex_fields & NORMAL) {
       SetNormal(vertex->normal[0], vertex->normal[1], vertex->normal[2]);
@@ -361,10 +377,10 @@ void NV2AState::DrawInlineBuffer(uint32_t enabled_vertex_fields, DrawPrimitive p
       SetSpecular(vertex->specular[0], vertex->specular[1], vertex->specular[2], vertex->specular[3]);
     }
     if (enabled_vertex_fields & FOG_COORD) {
-      SetFogCoord(vertex->fog_coord);
+      SetFogCoord(vertex->fog_coord[0]);
     }
     if (enabled_vertex_fields & POINT_SIZE) {
-      SetPointSize(vertex->point_size);
+      SetPointSize(vertex->point_size[0]);
     }
     if (enabled_vertex_fields & BACK_DIFFUSE) {
       SetBackDiffuse(vertex->back_diffuse);
@@ -437,66 +453,64 @@ void NV2AState::DrawInlineArray(uint32_t enabled_vertex_fields, DrawPrimitive pr
   Pushbuffer::Begin();
   Pushbuffer::Push(NV097_SET_BEGIN_END, primitive);
 
+  // Helper macro to push 1-4 float components based on count.
+#define PUSH_ATTR(count, field)                                                         \
+  if ((count) == 4) {                                                                   \
+    Pushbuffer::Push4F(NV2A_SUPPRESS_COMMAND_INCREMENT(NV097_INLINE_ARRAY), (field));   \
+  } else if ((count) == 3) {                                                            \
+    Pushbuffer::Push3F(NV2A_SUPPRESS_COMMAND_INCREMENT(NV097_INLINE_ARRAY), (field));   \
+  } else if ((count) == 2) {                                                            \
+    Pushbuffer::Push2F(NV2A_SUPPRESS_COMMAND_INCREMENT(NV097_INLINE_ARRAY), (field));   \
+  } else if ((count) == 1) {                                                            \
+    Pushbuffer::PushF(NV2A_SUPPRESS_COMMAND_INCREMENT(NV097_INLINE_ARRAY), (field)[0]); \
+  } else {                                                                              \
+    PBKPP_ASSERT(!"Invalid attribute count");                                           \
+  }
+
   auto vertex = vertex_buffer_->Lock();
   for (auto i = 0; i < vertex_buffer_->GetNumVertices(); ++i, ++vertex) {
     // Note: Ordering is important and must follow the NV2A_VERTEX_ATTR_POSITION, ... ordering.
     if (enabled_vertex_fields & POSITION) {
-      if (vertex_buffer_->position_count_ == 3) {
-        Pushbuffer::Push3F(NV2A_SUPPRESS_COMMAND_INCREMENT(NV097_INLINE_ARRAY), vertex->pos);
-      } else {
-        Pushbuffer::Push4F(NV2A_SUPPRESS_COMMAND_INCREMENT(NV097_INLINE_ARRAY), vertex->pos);
-      }
+      PUSH_ATTR(vertex_buffer_->position_count_, vertex->pos)
     }
-    // TODO: Support multi-element weights.
     if (enabled_vertex_fields & WEIGHT) {
-      Pushbuffer::PushF(NV2A_SUPPRESS_COMMAND_INCREMENT(NV097_INLINE_ARRAY), vertex->weight);
+      PUSH_ATTR(vertex_buffer_->weight_count_, vertex->weight)
     }
     if (enabled_vertex_fields & NORMAL) {
-      Pushbuffer::Push3F(NV2A_SUPPRESS_COMMAND_INCREMENT(NV097_INLINE_ARRAY), vertex->normal);
+      PUSH_ATTR(vertex_buffer_->normal_count_, vertex->normal)
     }
     if (enabled_vertex_fields & DIFFUSE) {
-      Pushbuffer::Push4F(NV2A_SUPPRESS_COMMAND_INCREMENT(NV097_INLINE_ARRAY), vertex->diffuse);
+      PUSH_ATTR(vertex_buffer_->diffuse_count_, vertex->diffuse)
     }
     if (enabled_vertex_fields & SPECULAR) {
-      Pushbuffer::Push4F(NV2A_SUPPRESS_COMMAND_INCREMENT(NV097_INLINE_ARRAY), vertex->specular);
+      PUSH_ATTR(vertex_buffer_->specular_count_, vertex->specular)
     }
     if (enabled_vertex_fields & FOG_COORD) {
-      Pushbuffer::PushF(NV2A_SUPPRESS_COMMAND_INCREMENT(NV097_INLINE_ARRAY), vertex->fog_coord);
+      PUSH_ATTR(vertex_buffer_->fog_coord_count_, vertex->fog_coord)
     }
     if (enabled_vertex_fields & POINT_SIZE) {
-      Pushbuffer::PushF(NV2A_SUPPRESS_COMMAND_INCREMENT(NV097_INLINE_ARRAY), vertex->point_size);
+      PUSH_ATTR(vertex_buffer_->point_size_count_, vertex->point_size)
     }
     if (enabled_vertex_fields & BACK_DIFFUSE) {
-      Pushbuffer::Push4F(NV2A_SUPPRESS_COMMAND_INCREMENT(NV097_INLINE_ARRAY), vertex->back_diffuse);
+      PUSH_ATTR(vertex_buffer_->back_diffuse_count_, vertex->back_diffuse)
     }
     if (enabled_vertex_fields & BACK_SPECULAR) {
-      Pushbuffer::Push4F(NV2A_SUPPRESS_COMMAND_INCREMENT(NV097_INLINE_ARRAY), vertex->back_specular);
+      PUSH_ATTR(vertex_buffer_->back_specular_count_, vertex->back_specular)
     }
-
-#define PUSH_TEXCOORD(count, field)                                                   \
-  if ((count) == 4) {                                                                 \
-    Pushbuffer::Push4F(NV2A_SUPPRESS_COMMAND_INCREMENT(NV097_INLINE_ARRAY), (field)); \
-  } else if ((count) == 2) {                                                          \
-    Pushbuffer::Push2F(NV2A_SUPPRESS_COMMAND_INCREMENT(NV097_INLINE_ARRAY), (field)); \
-  } else {                                                                            \
-    PBKPP_ASSERT(!"Invalid texcoord count");                                          \
-  }
-
     if (enabled_vertex_fields & TEXCOORD0) {
-      PUSH_TEXCOORD(vertex_buffer_->tex0_coord_count_, vertex->texcoord0)
+      PUSH_ATTR(vertex_buffer_->tex0_coord_count_, vertex->texcoord0)
     }
     if (enabled_vertex_fields & TEXCOORD1) {
-      PUSH_TEXCOORD(vertex_buffer_->tex1_coord_count_, vertex->texcoord1)
+      PUSH_ATTR(vertex_buffer_->tex1_coord_count_, vertex->texcoord1)
     }
     if (enabled_vertex_fields & TEXCOORD2) {
-      PUSH_TEXCOORD(vertex_buffer_->tex2_coord_count_, vertex->texcoord2)
+      PUSH_ATTR(vertex_buffer_->tex2_coord_count_, vertex->texcoord2)
     }
     if (enabled_vertex_fields & TEXCOORD3) {
-      PUSH_TEXCOORD(vertex_buffer_->tex3_coord_count_, vertex->texcoord3)
+      PUSH_ATTR(vertex_buffer_->tex3_coord_count_, vertex->texcoord3)
     }
-
-#undef PUSH_TEXCOORD
   }
+#undef PUSH_ATTR
   vertex_buffer_->Unlock();
   vertex_buffer_->SetCacheValid();
 
