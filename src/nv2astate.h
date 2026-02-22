@@ -576,6 +576,36 @@ class NV2AState {
     End();
   }
 
+  /** Renders a simple quad to the given post-projection coordinates, setting texcoords for a linear texture image. */
+  void DrawTexturedScreenQuadEx(float left, float top, float right, float bottom, float world_z, float u0, float v0,
+                                float u1, float v1, float u2, float v2, float u3, float v3) const {
+    Begin(PRIMITIVE_QUADS);
+    SetTexCoord0(u0, v0);
+    SetTexCoord1(u0, v0);
+    SetTexCoord2(u0, v0);
+    SetTexCoord3(u0, v0);
+    SetScreenVertex(left, top, world_z);
+
+    SetTexCoord0(u1, v1);
+    SetTexCoord1(u1, v1);
+    SetTexCoord2(u1, v1);
+    SetTexCoord3(u1, v1);
+    SetScreenVertex(right, top, world_z);
+
+    SetTexCoord0(u2, v2);
+    SetTexCoord1(u2, v2);
+    SetTexCoord2(u2, v2);
+    SetTexCoord3(u2, v2);
+    SetScreenVertex(right, bottom, world_z);
+
+    SetTexCoord0(u3, v3);
+    SetTexCoord1(u3, v3);
+    SetTexCoord2(u3, v3);
+    SetTexCoord3(u3, v3);
+    SetScreenVertex(left, bottom, world_z);
+    End();
+  }
+
   //! Unprojects the given coordinates and calls SetVertex.
   void SetScreenVertex(float x, float y, float world_z) const {
     vector_t screen{x, y, world_z, 1.f};
