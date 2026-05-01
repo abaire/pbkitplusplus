@@ -176,7 +176,7 @@ class TextureStage {
                  MagFilter mag = MAG_BOX_LOD0, bool signed_alpha = false, bool signed_red = false,
                  bool signed_green = false, bool signed_blue = false);
 
-  inline void SetFilter(float lod_bias = 0.f, ConvolutionKernel kernel = K_QUINCUNX, MinFilter min = MIN_BOX_LOD0,
+  inline void SetFilter(float lod_bias, ConvolutionKernel kernel = K_QUINCUNX, MinFilter min = MIN_BOX_LOD0,
                         MagFilter mag = MAG_BOX_LOD0, bool signed_alpha = false, bool signed_red = false,
                         bool signed_green = false, bool signed_blue = false) {
     auto fixed_bias = static_cast<int32_t>((lod_bias) * (1 << 8)) & 0x1FFF;
