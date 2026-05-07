@@ -1143,6 +1143,11 @@ void NV2AState::SetColorMask(uint32_t mask) const {
 }
 
 void NV2AState::SetBlend(bool enable, uint32_t func, uint32_t sfactor, uint32_t dfactor) const {
+  active_blend_config_.enable = enable;
+  active_blend_config_.func = func;
+  active_blend_config_.sfactor = sfactor;
+  active_blend_config_.dfactor = dfactor;
+
   Pushbuffer::Begin();
   Pushbuffer::Push(NV097_SET_BLEND_ENABLE, enable);
   if (enable) {
@@ -1612,6 +1617,7 @@ void NV2AState::RenderToSurfaceStart(void *surface_address, SurfaceColorFormat c
   Pushbuffer::End();
 
   framebuffer_surface_color_format_ = surface_color_format_;
+  framebuffer_blend_config_ = active_blend_config_;
 
   // Failing to disable alpha blending on B8 and G8B8 will trigger a hardware exception.
   SetBlend(SurfaceSupportsAlpha(color_format));
@@ -1632,7 +1638,7 @@ void NV2AState::RenderToSurfaceEnd() {
   SetSurfaceFormatImmediate(framebuffer_surface_color_format_, depth_buffer_format_, GetFramebufferWidth(),
                             GetFramebufferHeight(), false);
 
-  SetBlend(true);
+  SetBlend(framebuffer_blend_config_);
 }
 
 }  // namespace PBKitPlusPlus
