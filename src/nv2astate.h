@@ -354,6 +354,21 @@ class NV2AState {
     }
   }
 
+  //! Returns the pitch (bytes per row) for the given format and width in pixels.
+  [[nodiscard]] static uint32_t GetSurfaceZetaPitch(SurfaceZetaFormat fmt, uint32_t width) {
+    switch (fmt) {
+      case SZF_Z16:
+        return width << 1;
+
+      case SZF_Z24S8:
+        return width << 2;
+
+      default:
+        PBKPP_ASSERT(!"Invalid surface zeta format");
+        return width << 1;
+    }
+  }
+
   //! Changes the current depth buffer mode into float (true) or fixed integer (false).
   void SetDepthBufferFloatMode(bool enabled);
   //! Returns true if the current depth buffer mode is floating point.
@@ -892,12 +907,22 @@ class NV2AState {
   void DrawCheckerboard(uint32_t first_color = 0xFF00FFFF, uint32_t second_color = 0xFF000000,
                         uint32_t checker_size = 8);
 
-  //! Sets up rendering to write to a non-framebuffer address.
+  //! Sets up rendering to write to a non-framebuffer address using the existing zeta buffer. Note that this may
+  //! interact with the zeta buffer in odd ways if depth/stencil writes are enabled.
   void RenderToSurfaceStart(void *surface_address, SurfaceColorFormat color_format, uint32_t width, uint32_t height,
                             bool swizzle = false, uint32_t clip_x = 0, uint32_t clip_y = 0, uint32_t clip_width = 0,
                             uint32_t clip_height = 0, AntiAliasingSetting aa = AA_CENTER_1);
 
+  //! Sets up rendering to write to a non-framebuffer address.
+  void RenderToSurfaceStart(void *surface_address, SurfaceColorFormat color_format, void *zeta_address,
+                            SurfaceZetaFormat zeta_format, uint32_t width, uint32_t height, bool swizzle = false,
+                            uint32_t clip_x = 0, uint32_t clip_y = 0, uint32_t clip_width = 0, uint32_t clip_height = 0,
+                            AntiAliasingSetting aa = AA_CENTER_1);
+
   //! Restores rendering to the backbuffer.
+  //!
+  //! Warning: State settings are not guaranteed to be restored (e.g., non-standard DMA channels will need to be
+  //! re-applied after this call).
   void RenderToSurfaceEnd();
 
  private:
@@ -971,6 +996,7 @@ class NV2AState {
 
   //! Used to restore the color format after rendering to a non-framebuffer surface.
   SurfaceColorFormat framebuffer_surface_color_format_{SCF_A8R8G8B8};
+  SurfaceZetaFormat framebuffer_zeta_format_{SZF_Z16};
 
   //! The clip plane comparator setting for each of the 4 texture stages.
   //! Each entry is a 4-bit value indicating whether the associated texture address component (in S, T, R, Q order)
