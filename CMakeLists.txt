@@ -15,6 +15,7 @@ option(
 block(SCOPE_FOR VARIABLES)
     get_filename_component(NXDK_ROOT_DIR "${CMAKE_TOOLCHAIN_FILE}/../.." ABSOLUTE)
     set(NXDK_DIR "${NXDK_ROOT_DIR}" CACHE PATH "Path to the nxdk root directory.")
+    set(ENV{NXDK_DIR} "${NXDK_DIR}")
 
     list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/cmake/modules")
     include(PrebuildNXDK)

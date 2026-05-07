@@ -253,6 +253,13 @@ class NV2AState {
     SZF_Z24S8 = NV097_SET_SURFACE_FORMAT_ZETA_Z24S8
   };
 
+  struct BlendConfig {
+    bool enable;
+    uint32_t func;
+    uint32_t sfactor;
+    uint32_t dfactor;
+  };
+
  public:
   NV2AState(uint32_t framebuffer_width, uint32_t framebuffer_height, uint32_t max_texture_width,
             uint32_t max_texture_height, uint32_t max_texture_depth = 4);
@@ -692,6 +699,10 @@ class NV2AState {
                 uint32_t sfactor = NV097_SET_BLEND_FUNC_SFACTOR_V_SRC_ALPHA,
                 uint32_t dfactor = NV097_SET_BLEND_FUNC_DFACTOR_V_ONE_MINUS_SRC_ALPHA) const;
 
+  void SetBlend(const BlendConfig &config) const {
+    SetBlend(config.enable, config.func, config.sfactor, config.dfactor);
+  }
+
   //! Sets the blend color (and alpha) used by the V_CONSTANT_COLOR and V_CONSTANT_ALPHA blend factors.
   void SetBlendColorConstant(uint32_t color) const;
 
@@ -953,6 +964,10 @@ class NV2AState {
       kNoStrideOverride, kNoStrideOverride, kNoStrideOverride, kNoStrideOverride, kNoStrideOverride, kNoStrideOverride,
       kNoStrideOverride, kNoStrideOverride, kNoStrideOverride, kNoStrideOverride, kNoStrideOverride, kNoStrideOverride,
       kNoStrideOverride, kNoStrideOverride, kNoStrideOverride, kNoStrideOverride};
+
+  mutable BlendConfig active_blend_config_{.enable = false};
+  //! Used to restore the blend config after rendering to a non-framebuffer surface.
+  BlendConfig framebuffer_blend_config_;
 
   //! Used to restore the color format after rendering to a non-framebuffer surface.
   SurfaceColorFormat framebuffer_surface_color_format_{SCF_A8R8G8B8};
