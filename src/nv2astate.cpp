@@ -37,9 +37,14 @@ static void GetCompositeMatrix(matrix4_t &result, const matrix4_t &model_view, c
 // From pbkit.c, DMA_A is set to channel 3 by default
 // NV097_SET_CONTEXT_DMA_A == NV20_TCL_PRIMITIVE_3D_SET_OBJECT1
 static constexpr uint32_t kDefaultDMAChannelA = 3;
+// From pbkit.c, DMA_B is set to channel 11 by default
+// NV097_SET_CONTEXT_DMA_B == NV20_TCL_PRIMITIVE_3D_SET_OBJECT2
+static constexpr uint32_t kDefaultDMAChannelB = 11;
 // From pbkit.c, DMA_COLOR is set to channel 9 by default
 // NV097_SET_CONTEXT_DMA_COLOR == NV20_TCL_PRIMITIVE_3D_SET_OBJECT3
 const uint32_t kDefaultDMAColorChannel = 9;
+// NV097_SET_CONTEXT_DMA_ZETA is set to channel 10 by default.
+static constexpr uint32_t kDefaultDMAZetaChannel = 10;
 
 NV2AState::NV2AState(uint32_t framebuffer_width, uint32_t framebuffer_height, uint32_t max_texture_width,
                      uint32_t max_texture_height, uint32_t max_texture_depth)
@@ -1605,19 +1610,39 @@ void NV2AState::DrawCheckerboard(uint32_t first_color, uint32_t second_color, ui
 void NV2AState::RenderToSurfaceStart(void *surface_address, SurfaceColorFormat color_format, uint32_t width,
                                      uint32_t height, bool swizzle, uint32_t clip_x, uint32_t clip_y,
                                      uint32_t clip_width, uint32_t clip_height, AntiAliasingSetting aa) {
-  const auto kFramebufferPitch = GetFramebufferWidth() * 4;
+  uint32_t aa_multiplier;
+  switch (aa) {
+    case AA_CENTER_1:
+      aa_multiplier = 1;
+      break;
 
-  const uint32_t surface_pitch = NV2AState::GetSurfaceColorPitch(color_format, width);
+    case AA_CENTER_CORNER_2:
+      aa_multiplier = 2;
+      break;
+
+    case AA_SQUARE_OFFSET_4:
+      aa_multiplier = 4;
+      break;
+
+    default:
+      PBKPP_ASSERT(!"Invalid antialiasing mode");
+      aa_multiplier = 1;
+      break;
+  }
+
+  const uint32_t surface_pitch = GetSurfaceColorPitch(color_format, width) * aa_multiplier;
+  const uint32_t zeta_pitch = GetSurfaceZetaPitch(depth_buffer_format_, width) * aa_multiplier;
 
   Pushbuffer::Begin();
   Pushbuffer::Push(NV097_SET_CONTEXT_DMA_COLOR, kDefaultDMAChannelA);
   Pushbuffer::Push(NV097_SET_SURFACE_PITCH, SET_MASK(NV097_SET_SURFACE_PITCH_COLOR, surface_pitch) |
-                                                SET_MASK(NV097_SET_SURFACE_PITCH_ZETA, kFramebufferPitch));
+                                                SET_MASK(NV097_SET_SURFACE_PITCH_ZETA, zeta_pitch));
   Pushbuffer::Push(NV097_SET_SURFACE_COLOR_OFFSET, VRAM_ADDR(surface_address));
   Pushbuffer::End();
 
   framebuffer_surface_color_format_ = surface_color_format_;
   framebuffer_blend_config_ = active_blend_config_;
+  framebuffer_zeta_format_ = depth_buffer_format_;
 
   // Failing to disable alpha blending on B8 and G8B8 will trigger a hardware exception.
   SetBlend(SurfaceSupportsAlpha(color_format));
@@ -1626,16 +1651,34 @@ void NV2AState::RenderToSurfaceStart(void *surface_address, SurfaceColorFormat c
                             clip_height, aa);
 }
 
+void NV2AState::RenderToSurfaceStart(void *surface_address, SurfaceColorFormat color_format, void *zeta_address,
+                                     SurfaceZetaFormat zeta_format, uint32_t width, uint32_t height, bool swizzle,
+                                     uint32_t clip_x, uint32_t clip_y, uint32_t clip_width, uint32_t clip_height,
+                                     AntiAliasingSetting aa) {
+  Pushbuffer::Begin();
+  Pushbuffer::Push(NV097_SET_CONTEXT_DMA_ZETA, kDefaultDMAChannelB);
+  Pushbuffer::Push(NV097_SET_SURFACE_ZETA_OFFSET, VRAM_ADDR(zeta_address));
+  Pushbuffer::End();
+
+  auto current_zeta_format = depth_buffer_format_;
+  depth_buffer_format_ = zeta_format;
+  RenderToSurfaceStart(surface_address, color_format, width, height, swizzle, clip_x, clip_y, clip_width, clip_height,
+                       aa);
+  framebuffer_zeta_format_ = current_zeta_format;
+}
+
 void NV2AState::RenderToSurfaceEnd() {
   const uint32_t kFramebufferPitch = GetFramebufferWidth() * 4;
   Pushbuffer::Begin();
   Pushbuffer::Push(NV097_SET_CONTEXT_DMA_COLOR, kDefaultDMAColorChannel);
+  Pushbuffer::Push(NV097_SET_CONTEXT_DMA_ZETA, kDefaultDMAZetaChannel);
   Pushbuffer::Push(NV097_SET_SURFACE_COLOR_OFFSET, 0);
+  Pushbuffer::Push(NV097_SET_SURFACE_ZETA_OFFSET, 0);
   Pushbuffer::Push(NV097_SET_SURFACE_PITCH, SET_MASK(NV097_SET_SURFACE_PITCH_COLOR, kFramebufferPitch) |
                                                 SET_MASK(NV097_SET_SURFACE_PITCH_ZETA, kFramebufferPitch));
   Pushbuffer::End();
 
-  SetSurfaceFormatImmediate(framebuffer_surface_color_format_, depth_buffer_format_, GetFramebufferWidth(),
+  SetSurfaceFormatImmediate(framebuffer_surface_color_format_, framebuffer_zeta_format_, GetFramebufferWidth(),
                             GetFramebufferHeight(), false);
 
   SetBlend(framebuffer_blend_config_);
