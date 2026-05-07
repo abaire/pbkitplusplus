@@ -1632,6 +1632,9 @@ void NV2AState::RenderToSurfaceStart(void *surface_address, SurfaceColorFormat c
 
   const uint32_t surface_pitch = GetSurfaceColorPitch(color_format, width) * aa_multiplier;
   const uint32_t zeta_pitch = GetSurfaceZetaPitch(depth_buffer_format_, width) * aa_multiplier;
+  if (swizzle && color_format != SCF_B8) {
+    PBKPP_ASSERT(surface_pitch == zeta_pitch && "Swizzled surfaces must use identically sized color and zeta modes.");
+  }
 
   Pushbuffer::Begin();
   Pushbuffer::Push(NV097_SET_CONTEXT_DMA_COLOR, kDefaultDMAChannelA);
