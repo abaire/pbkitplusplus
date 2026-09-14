@@ -76,8 +76,11 @@
  * unaffected by line length; fragmented buffers average the curve
  * (~1150).  A silent CPU gains nothing over 2K-cycle-spaced polls.
  *
- * RAMHT handles 30..33 -- coexists (init-wise) with pbkit (1..17),
- * gpu_memcpy.c (24/25) and gpu_copy_sync.c (26..29).
+ * NOTE: The original cited channels (30..33) and external module references
+ * are incorrect for PBKitPlusPlus. In PBKitPlusPlus, channels 1..17 are used by
+ * pbkit, 18..24 are padding, and channels 25..28 (kM2MDmaInChannel through
+ * kM2MDmaNotifyScratchChannel) are used for M2M, with kNextContextChannel = 29.
+ * Similarly, SUBCH_2 is reused as kM2MSubchannel (configured by pbkit in pb_init).
  */
 
 #include "gpu_m2m.h"
@@ -90,10 +93,10 @@
 #include <pbkit/nv_objects.h>
 #include <xboxkrnl/xboxkrnl.h>
 
-#define GPUM_DMA_IN        30u
-#define GPUM_DMA_OUT       31u
-#define GPUM_DMA_NTFY      32u   /* live: notify page 0    */
-#define GPUM_DMA_NTFY_SCR  33u   /* scratch: notify page 1 */
+#include "nv2astate.h"
+#include "pushbuffer.h"
+
+using namespace PBKitPlusPlus;
 
 #define M2MF_LINE     4096u              /* default; see gpum_set_line() */
 #define M2MF_MAXLINES 2047u
@@ -114,21 +117,28 @@ static int g_bound_live = -1;
 
 static inline uint32_t phys(const void *p)
 {
+    uintptr_t va = (uintptr_t)p;
+    if (va >= 0x80000000 && va < 0xC0000000) {
+        return (uint32_t)(va & 0x1FFFFFFF);
+    }
     return (uint32_t)MmGetPhysicalAddress((PVOID)p);
 }
+
 static inline uint64_t tsc(void)
 {
     uint32_t lo, hi;
     __asm__ volatile("rdtsc" : "=a"(lo), "=d"(hi));
     return ((uint64_t)hi << 32) | lo;
 }
+
 static inline void cpu_pause(void)  { __asm__ volatile("pause"); }
 static inline void cpu_wbinvd(void) { __asm__ volatile("wbinvd" : : : "memory"); }
 static inline void cpu_sfence(void) { __asm__ volatile("sfence" : : : "memory"); }
 
 int gpum_init(void)
 {
-    uint32_t *p;
+    if (g_notif) return 0;
+
     unsigned char *pages = (unsigned char *)MmAllocateContiguousMemoryEx(
         2 * PG, 0, MAXRAM, 0, PAGE_READWRITE | PAGE_NOCACHE);
     if (!pages) return -1;
@@ -136,21 +146,21 @@ int gpum_init(void)
     memset(pages + PG, 0, 32);
     g_notif = (volatile uint32_t *)(pages + 0x10);
 
-    pb_create_dma_ctx(GPUM_DMA_IN,  DMA_CLASS_3D, 0, MAXRAM, &g_in);
-    pb_create_dma_ctx(GPUM_DMA_OUT, DMA_CLASS_3D, 0, MAXRAM, &g_out);
-    pb_create_dma_ctx(GPUM_DMA_NTFY,     DMA_CLASS_3D, (DWORD)(uintptr_t)pages,
+    pb_create_dma_ctx(kM2MDmaInChannel,  DMA_CLASS_3D, 0, MAXRAM, &g_in);
+    pb_create_dma_ctx(kM2MDmaOutChannel, DMA_CLASS_3D, 0, MAXRAM, &g_out);
+    pb_create_dma_ctx(kM2MDmaNotifyChannel,     DMA_CLASS_3D, (DWORD)(uintptr_t)pages,
                       0x1F, &g_ntfy);
-    pb_create_dma_ctx(GPUM_DMA_NTFY_SCR, DMA_CLASS_3D,
+    pb_create_dma_ctx(kM2MDmaNotifyScratchChannel, DMA_CLASS_3D,
                       (DWORD)(uintptr_t)(pages + PG), 0x1F, &g_ntfy_scr);
     pb_bind_channel(&g_in);
     pb_bind_channel(&g_out);
     pb_bind_channel(&g_ntfy);
     pb_bind_channel(&g_ntfy_scr);
 
-    p = pb_begin();
-    p = pb_push2_to(SUBCH_2, p, NV_MEMORY_TO_MEMORY_FORMAT_OBJECT_IN,
-                    GPUM_DMA_IN, GPUM_DMA_OUT);
-    pb_end(p);
+    Pushbuffer::Begin();
+    Pushbuffer::PushTo(kM2MSubchannel, NV_MEMORY_TO_MEMORY_FORMAT_OBJECT_IN,
+                       kM2MDmaInChannel, kM2MDmaOutChannel);
+    Pushbuffer::End();
     g_bound_live = -1;
     return 0;
 }
@@ -158,18 +168,16 @@ int gpum_init(void)
 static void m2mf_kick(uint32_t dst_pa, uint32_t src_pa, uint32_t line_len,
                       uint32_t lines, int live)
 {
-    uint32_t *p = pb_begin();
     if (live != g_bound_live) {
-        p = pb_push1_to(SUBCH_2, p, NV_MEMORY_TO_MEMORY_FORMAT_DMA_NOTIFY,
-                        live ? GPUM_DMA_NTFY : GPUM_DMA_NTFY_SCR);
+        Pushbuffer::PushTo(kM2MSubchannel, NV_MEMORY_TO_MEMORY_FORMAT_DMA_NOTIFY,
+                           live ? kM2MDmaNotifyChannel : kM2MDmaNotifyScratchChannel);
         g_bound_live = live;
     }
-    p = pb_push2_to(SUBCH_2, p, NV_MEMORY_TO_MEMORY_FORMAT_OFFSET_IN,
-                    src_pa, dst_pa);
-    p = pb_push4_to(SUBCH_2, p, NV_MEMORY_TO_MEMORY_FORMAT_PITCH_IN,
-                    line_len, line_len, line_len, lines);
-    p = pb_push2_to(SUBCH_2, p, NV_MEMORY_TO_MEMORY_FORMAT_FORMAT, 0x0101, 0);
-    pb_end(p);
+    Pushbuffer::PushTo(kM2MSubchannel, NV_MEMORY_TO_MEMORY_FORMAT_OFFSET_IN,
+                       src_pa, dst_pa);
+    Pushbuffer::PushTo(kM2MSubchannel, NV_MEMORY_TO_MEMORY_FORMAT_PITCH_IN,
+                       line_len, line_len, line_len, lines);
+    Pushbuffer::PushTo(kM2MSubchannel, NV_MEMORY_TO_MEMORY_FORMAT_FORMAT, 0x0101, 0);
 }
 
 /* one physically contiguous stretch, chunked to the engine's limits;
@@ -228,6 +236,14 @@ static size_t run_len(const unsigned char *v, size_t max)
 
 void gpum_start(void *dst, const void *src, size_t n)
 {
+    if (!g_notif) {
+        if (gpum_init() < 0) return;
+    }
+
+    if (!gpum_done()) {
+        gpum_wait();
+    }
+
     unsigned char *d = (unsigned char *)dst;
     const unsigned char *s = (const unsigned char *)src;
 
@@ -238,6 +254,9 @@ void gpum_start(void *dst, const void *src, size_t n)
         g_notif[3] = 0;
         return;
     }
+
+    Pushbuffer::Begin();
+
     while (n) {
         size_t rd = run_len(d, n);
         size_t rs = run_len(s, rd);          /* cap src probe at dst's run */
@@ -247,10 +266,13 @@ void gpum_start(void *dst, const void *src, size_t n)
         s += chunk;
         n -= chunk;
     }
+
+    Pushbuffer::End();
 }
 
 int gpum_done(void)
 {
+    if (!g_notif) return 1;
     uint32_t st = g_notif[3];
     if (st == NOTIF_ARMED) return 0;
     if (g_notif[2] != 0) return -(int)g_notif[2];
@@ -273,18 +295,7 @@ static int gpum_wait_poll_loop(void)
 
 int gpum_wait(void)
 {
-    int r = gpum_wait_poll_loop();
-    /* pbkit's pushbuffer is LINEAR: nothing wraps it except pb_reset(),
-     * which frame-oriented apps call once per frame and copy workloads
-     * never called at all.  Cumulative kicks therefore march toward the
-     * 512K tail and off the end -- hardware-observed as a DMA-pusher
-     * invalid-data wedge once a fragmented-copy burst pushed total session
-     * traffic past the buffer (pb_begin only prints on overflow).  After a
-     * completed wait our stream is consumed, so resetting here is free and
-     * gives every copy the full buffer: worst-case capacity ~11K kicks,
-     * more than a 32M fully-scattered copy needs. */
-    pb_reset();
-    return r;
+    return gpum_wait_poll_loop();
 }
 
 void *gpum_copy(void *dst, const void *src, size_t n)

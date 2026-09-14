@@ -20,6 +20,7 @@
 #include "pushbuffer.h"
 #include "shaders/vertex_shader_program.h"
 #include "texture_generator.h"
+#include "third_party/gpu_m2m.h"
 #include "vertex_buffer.h"
 #include "xbox_math_d3d.h"
 #include "xbox_math_matrix.h"
@@ -47,13 +48,16 @@ const uint32_t kDefaultDMAColorChannel = 9;
 static constexpr uint32_t kDefaultDMAZetaChannel = 10;
 
 NV2AState::NV2AState(uint32_t framebuffer_width, uint32_t framebuffer_height, uint32_t max_texture_width,
-                     uint32_t max_texture_height, uint32_t max_texture_depth)
+                     uint32_t max_texture_height, uint32_t max_texture_depth, bool enable_m2m)
     : framebuffer_width_(framebuffer_width),
       framebuffer_height_(framebuffer_height),
       max_texture_width_(max_texture_width),
       max_texture_height_(max_texture_height),
       max_texture_depth_(max_texture_depth) {
   Pushbuffer::Initialize();
+  if (enable_m2m) {
+    PBKPP_ASSERT(gpum_init() == 0 && "Failed to initialize GPU M2M engine.");
+  }
 
   // allocate texture memory buffer large enough for all types
   uint32_t stride = max_texture_width_ * 4;
@@ -98,6 +102,8 @@ NV2AState::~NV2AState() {
   // texture_palette_memory_ is an offset into texture_memory_ and is intentionally not freed.
   texture_palette_memory_ = nullptr;
 }
+
+int NV2AState::InitializeM2M() { return gpum_init(); }
 
 void NV2AState::ClearDepthStencilRegion(uint32_t depth_value, uint8_t stencil_value, uint32_t left, uint32_t top,
                                         uint32_t width, uint32_t height) const {
