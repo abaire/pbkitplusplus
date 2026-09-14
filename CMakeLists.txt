@@ -82,6 +82,7 @@ block(SCOPE_FOR VARIABLES)
             src/texture_format.h
             src/texture_generator.h
             src/texture_stage.h
+            src/third_party/gpu_m2m.h
             src/vertex_buffer.h
     )
 
@@ -101,6 +102,7 @@ block(SCOPE_FOR VARIABLES)
             src/texture_format.cpp
             src/texture_generator.cpp
             src/texture_stage.cpp
+            src/third_party/gpu_m2m.cpp
             src/vertex_buffer.cpp
             src/pbkpp_assert.cpp
             src/pbkpp_assert.h

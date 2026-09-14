@@ -25,12 +25,22 @@ class VertexShaderProgram;
 struct Vertex;
 class VertexBuffer;
 
+//! Reserved subchannel for M2M (Memory-to-Memory) copy operations.
+//! Reuses pbkit's default SUBCH_2 binding to GR_CLASS_39 configured in pb_init().
+constexpr uint32_t kM2MSubchannel = SUBCH_2;
+
 //! The first pgraph 0x3D subchannel that can be used by tests.
 //! It appears that this must be exactly one more than the last subchannel configured by pbkit or else it will trigger
 //! an exception in xemu.
 constexpr uint32_t kNextSubchannel = NEXT_SUBCH;
-//! The first pgraph context channel that can be used by tests.
-constexpr int32_t kNextContextChannel = 25;
+
+//! Channels 1-17 are used by pbkit and 18-24 are reserved as padding.
+//! Context 25 is the base for extended/library contexts.
+constexpr int32_t kM2MDmaInChannel = 25;
+constexpr int32_t kM2MDmaOutChannel = kM2MDmaInChannel + 1;
+constexpr int32_t kM2MDmaNotifyChannel = kM2MDmaOutChannel + 1;
+constexpr int32_t kM2MDmaNotifyScratchChannel = kM2MDmaNotifyChannel + 1;
+constexpr int32_t kNextContextChannel = kM2MDmaNotifyScratchChannel + 1;
 
 constexpr uint32_t kNoStrideOverride = 0xFFFFFFFF;
 
@@ -262,8 +272,11 @@ class NV2AState {
 
  public:
   NV2AState(uint32_t framebuffer_width, uint32_t framebuffer_height, uint32_t max_texture_width,
-            uint32_t max_texture_height, uint32_t max_texture_depth = 4);
+            uint32_t max_texture_height, uint32_t max_texture_depth = 4, bool enable_m2m = false);
   virtual ~NV2AState();
+
+  //! Explicitly initializes the M2M copy engine. Optional; M2M operations will lazily initialize on first use.
+  static int InitializeM2M();
 
   TextureStage &GetTextureStage(uint32_t stage) { return texture_stage_[stage]; }
   void SetTextureFormat(const TextureFormatInfo &fmt, uint32_t stage = 0);
