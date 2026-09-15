@@ -112,7 +112,7 @@ using namespace PBKitPlusPlus;
 
 static uint32_t g_line = M2MF_LINE;      /* bytes per M2MF line */
 static struct s_CtxDma g_in, g_out, g_ntfy, g_ntfy_scr;
-static volatile uint32_t *g_notif;           /* M2MF slot: page + 0x10 */
+static volatile gpum_notifier_t *g_notif;           /* M2MF slot: page + 0x10 */
 static int g_bound_live = -1;
 
 static inline uint32_t phys(const void *p)
@@ -137,14 +137,16 @@ static inline void cpu_sfence(void) { __asm__ volatile("sfence" : : : "memory");
 
 int gpum_init(void)
 {
-    if (g_notif) return 0;
+    if (g_notif) {
+      return 0;
+    }
 
     unsigned char *pages = (unsigned char *)MmAllocateContiguousMemoryEx(
         2 * PG, 0, MAXRAM, 0, PAGE_READWRITE | PAGE_NOCACHE);
     if (!pages) return -1;
     memset(pages, 0, 32);
     memset(pages + PG, 0, 32);
-    g_notif = (volatile uint32_t *)(pages + 0x10);
+    g_notif = (volatile gpum_notifier_t *)(pages + 0x10);
 
     pb_create_dma_ctx(kM2MDmaInChannel,  DMA_CLASS_3D, 0, MAXRAM, &g_in);
     pb_create_dma_ctx(kM2MDmaOutChannel, DMA_CLASS_3D, 0, MAXRAM, &g_out);
@@ -247,11 +249,11 @@ void gpum_start(void *dst, const void *src, size_t n)
     unsigned char *d = (unsigned char *)dst;
     const unsigned char *s = (const unsigned char *)src;
 
-    g_notif[2] = 0;
-    g_notif[3] = NOTIF_ARMED;
+    g_notif->error = 0;
+    g_notif->status = NOTIF_ARMED;
 
     if (n == 0) {
-        g_notif[3] = 0;
+        g_notif->status = 0;
         return;
     }
 
@@ -272,10 +274,16 @@ void gpum_start(void *dst, const void *src, size_t n)
 
 int gpum_done(void)
 {
-    if (!g_notif) return 1;
-    uint32_t st = g_notif[3];
-    if (st == NOTIF_ARMED) return 0;
-    if (g_notif[2] != 0) return -(int)g_notif[2];
+    if (!g_notif) {
+      return 1;
+    }
+    uint32_t st = g_notif->status;
+    if (st == NOTIF_ARMED) {
+      return 0;
+    }
+    if (g_notif->error != 0) {
+      return -(int)g_notif->error;
+    }
     return 1;
 }
 
@@ -285,12 +293,23 @@ static int gpum_wait_poll_loop(void)
     unsigned backoff = 16, i;
     for (;;) {
         int r = gpum_done();
-        if (r > 0) return 0;
-        if (r < 0) return r;
-        if (tsc() - t0 > GPUM_TIMEOUT_CYC) return GPUM_ETIMEOUT;
-        for (i = 0; i < backoff; i++) cpu_pause();
-        if (backoff < GPUM_BACKOFF_CAP) backoff <<= 1;
+        if (r > 0) {
+          return 0;
+        }
+        if (r < 0) {
+          return r;
+        }
+        if (tsc() - t0 > GPUM_TIMEOUT_CYC) {
+          return GPUM_ETIMEOUT;
+        }
+        for (i = 0; i < backoff; i++) {
+          cpu_pause();
+        }
+        if (backoff < GPUM_BACKOFF_CAP) {
+          backoff <<= 1;
+        }
     }
+  return 0;
 }
 
 int gpum_wait(void)
@@ -317,10 +336,17 @@ int gpum_is_contiguous(const void *p, size_t n)
     return run_len((const unsigned char *)p, n ? n : 1) >= (n ? n : 1);
 }
 
-void gpum_notifier_dump(uint32_t out[4])
+void gpum_notifier_dump(gpum_notifier_t *out)
 {
-    out[0] = g_notif[0];
-    out[1] = g_notif[1];
-    out[2] = g_notif[2];
-    out[3] = g_notif[3];
+    if (!out) {
+        return;
+    }
+    if (!g_notif) {
+        memset(out, 0, sizeof(*out));
+        return;
+    }
+    out->ptimer_low = g_notif->ptimer_low;
+    out->ptimer_high = g_notif->ptimer_high;
+    out->error = g_notif->error;
+    out->status = g_notif->status;
 }

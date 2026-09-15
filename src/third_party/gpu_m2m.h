@@ -15,6 +15,26 @@ extern "C" {
 #include <stdint.h>
 #endif
 
+#if defined(__GNUC__) || defined(__clang__)
+#define GPUM_PACKED __attribute__((packed))
+#else
+#define GPUM_PACKED
+#endif
+
+#pragma pack(push, 1)
+/**
+ * @brief NV2A M2MF hardware completion notifier record.
+ *
+ * Located at offset 0x10 within the notifier DMA context.
+ */
+typedef struct gpum_notifier {
+  uint32_t ptimer_low;  /**< NV2A PTIMER timestamp low word */
+  uint32_t ptimer_high; /**< NV2A PTIMER timestamp high word */
+  uint32_t error;       /**< Hardware error word (0 = no error) */
+  uint32_t status;      /**< Completion status (0 = success, 0xFFFFFFFF = armed/pending) */
+} GPUM_PACKED gpum_notifier_t;
+#pragma pack(pop)
+
 /**
  * @brief Initializes the M2M DMA engine and preallocates notifier memory.
  *
@@ -198,15 +218,9 @@ uint32_t gpum_set_line(uint32_t bytes);
 /**
  * @brief Copies the most recent hardware completion notifier record for diagnostics.
  *
- * The notifier record structure consists of 4 32-bit words:
- * - out[0]: PTIMER low timestamp
- * - out[1]: PTIMER high timestamp
- * - out[2]: Unused / error padding
- * - out[3]: Completion status (0 = success, non-zero = error / armed state)
- *
- * @param out Array of 4 uint32_t elements to receive the notifier data.
+ * @param out Pointer to a gpum_notifier_t structure to receive the notifier record.
  */
-void gpum_notifier_dump(uint32_t out[4]);
+void gpum_notifier_dump(gpum_notifier_t *out);
 
 #ifdef __cplusplus
 }
