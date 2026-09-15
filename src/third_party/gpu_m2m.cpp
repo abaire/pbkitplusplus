@@ -85,7 +85,8 @@
 
 #include "gpu_m2m.h"
 
-#include <string.h>
+#include <cstring>
+#include <cstdbool>
 
 #include <pbkit/pbkit.h>
 #include <pbkit/pbkit_dma.h>
@@ -114,6 +115,7 @@ static uint32_t g_line = M2MF_LINE;      /* bytes per M2MF line */
 static struct s_CtxDma g_in, g_out, g_ntfy, g_ntfy_scr;
 static volatile gpum_notifier_t *g_notif;           /* M2MF slot: page + 0x10 */
 static int g_bound_live = -1;
+static bool g_fallback_to_memcpy = false;
 
 static inline uint32_t phys(const void *p)
 {
@@ -135,15 +137,40 @@ static inline void cpu_pause(void)  { __asm__ volatile("pause"); }
 static inline void cpu_wbinvd(void) { __asm__ volatile("wbinvd" : : : "memory"); }
 static inline void cpu_sfence(void) { __asm__ volatile("sfence" : : : "memory"); }
 
+static bool check_m2m_support()
+{
+    void *data = MmAllocateContiguousMemoryEx( 8, 0, MAXRAM, 0, PAGE_READWRITE | PAGE_NOCACHE);
+
+    uint32_t *test_src = (uint32_t *)(data);
+    uint32_t *test_dst = test_src + 1;
+    *test_src = 0xA55A1234;
+    *test_dst = 0;
+
+    gpum_start(test_dst, test_src, sizeof(uint32_t));
+    int res = gpum_wait();
+    if (res != 0 || *test_dst != 0xA55A1234) {
+        DbgPrint("WARNING: NV_MEMORY_TO_MEMORY_FORMAT (0x39) check failed (%s). Falling back to memcpy.\n",
+                 res == GPUM_ETIMEOUT ? "timed out" : "unsupported/error");
+        g_fallback_to_memcpy = true;
+        return false;
+    }
+
+    return true;
+}
+
 int gpum_init(void)
 {
-    if (g_notif) {
+    if (g_fallback_to_memcpy || g_notif) {
       return 0;
     }
 
     unsigned char *pages = (unsigned char *)MmAllocateContiguousMemoryEx(
         2 * PG, 0, MAXRAM, 0, PAGE_READWRITE | PAGE_NOCACHE);
-    if (!pages) return -1;
+    if (!pages) {
+        DbgPrint("WARNING: Failed to allocate notifier memory for GPU M2M. Falling back to memcpy.\n");
+        g_fallback_to_memcpy = true;
+        return 0;
+    }
     memset(pages, 0, 32);
     memset(pages + PG, 0, 32);
     g_notif = (volatile gpum_notifier_t *)(pages + 0x10);
@@ -164,6 +191,9 @@ int gpum_init(void)
                        kM2MDmaInChannel, kM2MDmaOutChannel);
     Pushbuffer::End();
     g_bound_live = -1;
+
+    check_m2m_support();
+
     return 0;
 }
 
@@ -239,8 +269,13 @@ static size_t run_len(const unsigned char *v, size_t max)
 
 void gpum_start(void *dst, const void *src, size_t n)
 {
-    if (!g_notif) {
+    if (!g_notif && !g_fallback_to_memcpy) {
         if (gpum_init() < 0) return;
+    }
+
+    if (g_fallback_to_memcpy) {
+        memcpy(dst, src, n);
+        return;
     }
 
     if (!gpum_done()) {
@@ -273,11 +308,26 @@ void gpum_start(void *dst, const void *src, size_t n)
     Pushbuffer::End();
 }
 
+static inline void memcpy_pitched(char *dst, const char *src, uint32_t line_len,
+                        uint32_t lines, uint32_t pitch_in, uint32_t pitch_out)
+{
+    for (uint32_t i = 0; i < lines; i++) {
+        memcpy(dst, src, line_len);
+        src += pitch_in;
+        dst += pitch_out;
+    }
+}
+
 void gpum_start_pitched(void *dst, const void *src, uint32_t line_len,
                         uint32_t lines, uint32_t pitch_in, uint32_t pitch_out)
 {
-    if (!g_notif) {
+    if (!g_notif && !g_fallback_to_memcpy) {
         if (gpum_init() < 0) return;
+    }
+
+    if (g_fallback_to_memcpy) {
+        memcpy_pitched((char*)dst, (char*)src, line_len, lines, pitch_in, pitch_out);
+        return;
     }
 
     if (!gpum_done()) {
@@ -310,6 +360,9 @@ void gpum_start_pitched(void *dst, const void *src, uint32_t line_len,
 
 int gpum_done(void)
 {
+    if (g_fallback_to_memcpy) {
+        return 1;
+    }
     if (!g_notif) {
       return 1;
     }
@@ -350,11 +403,20 @@ static int gpum_wait_poll_loop(void)
 
 int gpum_wait(void)
 {
+    if (g_fallback_to_memcpy) {
+        return 0;
+    }
     return gpum_wait_poll_loop();
 }
 
 void *gpum_copy(void *dst, const void *src, size_t n)
 {
+    if (!g_notif && !g_fallback_to_memcpy) {
+        gpum_init();
+    }
+    if (g_fallback_to_memcpy) {
+        return memcpy(dst, src, n);
+    }
     cpu_wbinvd();
     gpum_start(dst, src, n);
     return gpum_wait() == 0 ? dst : NULL;
@@ -362,6 +424,12 @@ void *gpum_copy(void *dst, const void *src, size_t n)
 
 void *gpum_copy_wc(void *dst, const void *src, size_t n)
 {
+    if (!g_notif && !g_fallback_to_memcpy) {
+        gpum_init();
+    }
+    if (g_fallback_to_memcpy) {
+        return memcpy(dst, src, n);
+    }
     cpu_sfence();
     gpum_start(dst, src, n);
     return gpum_wait() == 0 ? dst : NULL;
@@ -370,6 +438,13 @@ void *gpum_copy_wc(void *dst, const void *src, size_t n)
 void *gpum_copy_pitched(void *dst, const void *src, uint32_t line_len,
                         uint32_t lines, uint32_t pitch_in, uint32_t pitch_out)
 {
+    if (!g_notif && !g_fallback_to_memcpy) {
+        gpum_init();
+    }
+    if (g_fallback_to_memcpy) {
+        memcpy_pitched((char*)dst, (char*)src, line_len, lines, pitch_in, pitch_out);
+        return dst;
+    }
     cpu_wbinvd();
     gpum_start_pitched(dst, src, line_len, lines, pitch_in, pitch_out);
     return gpum_wait() == 0 ? dst : NULL;
@@ -378,6 +453,13 @@ void *gpum_copy_pitched(void *dst, const void *src, uint32_t line_len,
 void *gpum_copy_pitched_wc(void *dst, const void *src, uint32_t line_len,
                            uint32_t lines, uint32_t pitch_in, uint32_t pitch_out)
 {
+    if (!g_notif && !g_fallback_to_memcpy) {
+        gpum_init();
+    }
+    if (g_fallback_to_memcpy) {
+        memcpy_pitched((char*)dst, (char*)src, line_len, lines, pitch_in, pitch_out);
+        return dst;
+    }
     cpu_sfence();
     gpum_start_pitched(dst, src, line_len, lines, pitch_in, pitch_out);
     return gpum_wait() == 0 ? dst : NULL;
@@ -393,7 +475,7 @@ void gpum_notifier_dump(gpum_notifier_t *out)
     if (!out) {
         return;
     }
-    if (!g_notif) {
+    if (!g_notif || g_fallback_to_memcpy) {
         memset(out, 0, sizeof(*out));
         return;
     }

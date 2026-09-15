@@ -44,6 +44,11 @@ typedef struct gpum_notifier {
  * However, early initialization at startup avoids physical memory fragmentation.
  * Subsequent calls are safe idempotent no-ops.
  *
+ * Performs a test transfer to verify class 0x39 support (e.g. on older xemu
+ * releases that do not implement NV_MEMORY_TO_MEMORY_FORMAT). If the test fails
+ * or times out, a warning is logged and all copy operations transparently fall back
+ * to standard CPU memcpy.
+ *
  * @return 0 on success, or a negative error code if allocation fails.
  */
 int gpum_init(void);
