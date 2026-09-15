@@ -168,7 +168,8 @@ int gpum_init(void)
 }
 
 static void m2mf_kick(uint32_t dst_pa, uint32_t src_pa, uint32_t line_len,
-                      uint32_t lines, int live)
+                      uint32_t lines, uint32_t pitch_in, uint32_t pitch_out,
+                      int live)
 {
     if (live != g_bound_live) {
         Pushbuffer::PushTo(kM2MSubchannel, NV_MEMORY_TO_MEMORY_FORMAT_DMA_NOTIFY,
@@ -178,7 +179,7 @@ static void m2mf_kick(uint32_t dst_pa, uint32_t src_pa, uint32_t line_len,
     Pushbuffer::PushTo(kM2MSubchannel, NV_MEMORY_TO_MEMORY_FORMAT_OFFSET_IN,
                        src_pa, dst_pa);
     Pushbuffer::PushTo(kM2MSubchannel, NV_MEMORY_TO_MEMORY_FORMAT_PITCH_IN,
-                       line_len, line_len, line_len, lines);
+                       pitch_in, pitch_out, line_len, lines);
     Pushbuffer::PushTo(kM2MSubchannel, NV_MEMORY_TO_MEMORY_FORMAT_FORMAT, 0x0101, 0);
 }
 
@@ -187,7 +188,7 @@ static void m2mf_kick(uint32_t dst_pa, uint32_t src_pa, uint32_t line_len,
 static void emit_run(uint32_t d, uint32_t s, size_t n, int final_live)
 {
     while (n > g_line * (size_t)M2MF_MAXLINES) {
-        m2mf_kick(d, s, g_line, M2MF_MAXLINES, 0);
+        m2mf_kick(d, s, g_line, M2MF_MAXLINES, g_line, g_line, 0);
         d += g_line * M2MF_MAXLINES;
         s += g_line * M2MF_MAXLINES;
         n -= g_line * (size_t)M2MF_MAXLINES;
@@ -195,13 +196,13 @@ static void emit_run(uint32_t d, uint32_t s, size_t n, int final_live)
     if (n >= g_line) {
         uint32_t lines = (uint32_t)(n / g_line);
         int last = (n % g_line) == 0;
-        m2mf_kick(d, s, g_line, lines, last && final_live);
+        m2mf_kick(d, s, g_line, lines, g_line, g_line, last && final_live);
         d += lines * g_line;
         s += lines * g_line;
         n -= (size_t)lines * g_line;
         if (last) return;
     }
-    m2mf_kick(d, s, (uint32_t)n, 1, final_live);
+    m2mf_kick(d, s, (uint32_t)n, 1, (uint32_t)n, (uint32_t)n, final_live);
 }
 
 /* Tuning hook: bytes per M2MF line (default 4096).  The engine alternates
@@ -272,6 +273,41 @@ void gpum_start(void *dst, const void *src, size_t n)
     Pushbuffer::End();
 }
 
+void gpum_start_pitched(void *dst, const void *src, uint32_t line_len,
+                        uint32_t lines, uint32_t pitch_in, uint32_t pitch_out)
+{
+    if (!g_notif) {
+        if (gpum_init() < 0) return;
+    }
+
+    if (!gpum_done()) {
+        gpum_wait();
+    }
+
+    g_notif->error = 0;
+    g_notif->status = NOTIF_ARMED;
+
+    if (lines == 0 || line_len == 0) {
+        g_notif->status = 0;
+        return;
+    }
+
+    uint32_t s_pa = phys(src);
+    uint32_t d_pa = phys(dst);
+
+    Pushbuffer::Begin();
+
+    while (lines > M2MF_MAXLINES) {
+        m2mf_kick(d_pa, s_pa, line_len, M2MF_MAXLINES, pitch_in, pitch_out, 0);
+        d_pa += M2MF_MAXLINES * pitch_out;
+        s_pa += M2MF_MAXLINES * pitch_in;
+        lines -= M2MF_MAXLINES;
+    }
+    m2mf_kick(d_pa, s_pa, line_len, lines, pitch_in, pitch_out, 1);
+
+    Pushbuffer::End();
+}
+
 int gpum_done(void)
 {
     if (!g_notif) {
@@ -328,6 +364,22 @@ void *gpum_copy_wc(void *dst, const void *src, size_t n)
 {
     cpu_sfence();
     gpum_start(dst, src, n);
+    return gpum_wait() == 0 ? dst : NULL;
+}
+
+void *gpum_copy_pitched(void *dst, const void *src, uint32_t line_len,
+                        uint32_t lines, uint32_t pitch_in, uint32_t pitch_out)
+{
+    cpu_wbinvd();
+    gpum_start_pitched(dst, src, line_len, lines, pitch_in, pitch_out);
+    return gpum_wait() == 0 ? dst : NULL;
+}
+
+void *gpum_copy_pitched_wc(void *dst, const void *src, uint32_t line_len,
+                           uint32_t lines, uint32_t pitch_in, uint32_t pitch_out)
+{
+    cpu_sfence();
+    gpum_start_pitched(dst, src, line_len, lines, pitch_in, pitch_out);
     return gpum_wait() == 0 ? dst : NULL;
 }
 

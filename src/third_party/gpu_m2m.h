@@ -173,6 +173,97 @@ void *gpum_copy(void *dst, const void *src, size_t n);
 void *gpum_copy_wc(void *dst, const void *src, size_t n);
 
 /**
+ * @brief Queues an asynchronous 2D pitched memory-to-memory copy on the NV2A M2MF engine (class 0x39).
+ *
+ * Performs a 2D rectangular stride copy of @p lines rows, each of length @p line_len bytes.
+ * After copying each row, the source pointer advances by @p pitch_in bytes and the destination
+ * pointer advances by @p pitch_out bytes. Inter-line destination padding bytes
+ * (@p pitch_out - @p line_len) remain untouched.
+ *
+ * Transfers with @p lines exceeding the NV2A hardware limit of 2047 lines per kick are
+ * automatically chunked across multiple kicks, with the live completion notifier bound to the final kick.
+ *
+ * @note **Physical Contiguity Contract**:
+ * - Unlike 1D linear copies (gpum_start/gpum_copy), which page-walk and coalesce scattered physical pages,
+ *   2D pitched copies stride directly in physical address space across lines.
+ * - **Both source and destination buffers MUST be physically contiguous across their entire active span**:
+ *   - The source buffer must be physically contiguous for at least `(lines - 1) * pitch_in + line_len` bytes.
+ *   - The destination buffer must be physically contiguous for at least `(lines - 1) * pitch_out + line_len` bytes.
+ * - Buffers allocated via MmAllocateContiguousMemory() or MmAllocateContiguousMemoryEx() (such as
+ *   framebuffers, textures, and linear surfaces) satisfy this contract.
+ * - Scattered heap allocations (e.g. standard malloc() or new) that cross page boundaries are NOT supported
+ *   for pitched copies because physical page adjacency cannot be guaranteed.
+ *
+ * @note Only one M2M operation (1D or pitched) may be in-flight at a time. The source and destination
+ * regions must not overlap.
+ *
+ * @note The caller is responsible for ensuring source memory visibility prior to calling gpum_start_pitched()
+ * (e.g. via sfence for Write-Combining memory or wbinvd for Write-Back cached memory) and must not modify or
+ * access either buffer until the copy completes (poll gpum_done() or await gpum_wait()).
+ *
+ * @param dst Destination memory pointer (virtual address). Must be physically contiguous.
+ * @param src Source memory pointer (virtual address). Must be physically contiguous.
+ * @param line_len Number of bytes to copy per row.
+ * @param lines Number of rows to copy.
+ * @param pitch_in Source stride in bytes from the start of one row to the start of the next.
+ * @param pitch_out Destination stride in bytes from the start of one row to the start of the next.
+ */
+void gpum_start_pitched(void *dst, const void *src, uint32_t line_len,
+                        uint32_t lines, uint32_t pitch_in, uint32_t pitch_out);
+
+/**
+ * @brief Synchronously copies 2D pitched memory using the GPU M2M engine with Write-Back (WB) cache coherency.
+ *
+ * Flushes and invalidates the CPU cache hierarchy (via wbinvd) before initiating the GPU DMA
+ * transfer, ensuring dirty CPU cache lines are written back to DRAM and that subsequent CPU reads
+ * refetch updated data from memory. Uses the hardware completion notifier to await transfer completion.
+ *
+ * ### When to use gpum_copy_pitched vs gpum_copy_pitched_wc:
+ * - Use gpum_copy_pitched whenever the source or destination buffers reside in standard Write-Back (WB)
+ *   cached memory (e.g. MmAllocateContiguousMemory without PAGE_WRITECOMBINE / PAGE_NOCACHE).
+ * - Use gpum_copy_pitched_wc when both buffers reside in Write-Combining (WC) or un-cached memory
+ *   to avoid the CPU cache invalidation penalty of wbinvd.
+ *
+ * @see gpum_start_pitched for the Physical Contiguity Contract.
+ *
+ * @param dst Destination memory pointer (virtual address). Must be physically contiguous.
+ * @param src Source memory pointer (virtual address). Must be physically contiguous.
+ * @param line_len Number of bytes to copy per row.
+ * @param lines Number of rows to copy.
+ * @param pitch_in Source stride in bytes from the start of one row to the start of the next.
+ * @param pitch_out Destination stride in bytes from the start of one row to the start of the next.
+ * @return Pointer to dst on success, or NULL if an error or timeout occurred.
+ */
+void *gpum_copy_pitched(void *dst, const void *src, uint32_t line_len,
+                        uint32_t lines, uint32_t pitch_in, uint32_t pitch_out);
+
+/**
+ * @brief Synchronously copies 2D pitched memory using the GPU M2M engine with Write-Combining (WC) store fence.
+ *
+ * Issues an sfence instruction before initiating the GPU DMA transfer, flushing CPU write-combining
+ * store buffers without invalidating the CPU L1/L2 caches. Awaits completion via the hardware completion notifier.
+ *
+ * ### When to use gpum_copy_pitched_wc vs gpum_copy_pitched:
+ * - Use gpum_copy_pitched_wc when BOTH source and destination buffers reside in Write-Combining (WC)
+ *   or un-cached memory (e.g. video RAM, textures, or buffers allocated with PAGE_WRITECOMBINE / PAGE_NOCACHE).
+ * - DO NOT use gpum_copy_pitched_wc if either buffer is Write-Back cached, as dirty CPU cache lines
+ *   will not be flushed to DRAM, causing stale reads or silent corruption. Use gpum_copy_pitched instead.
+ *
+ * @see gpum_start_pitched for the Physical Contiguity Contract.
+ *
+ * @param dst Destination memory pointer (virtual address). Must be physically contiguous.
+ * @param src Source memory pointer (virtual address). Must be physically contiguous.
+ * @param line_len Number of bytes to copy per row.
+ * @param lines Number of rows to copy.
+ * @param pitch_in Source stride in bytes from the start of one row to the start of the next.
+ * @param pitch_out Destination stride in bytes from the start of one row to the start of the next.
+ * @return Pointer to dst on success, or NULL if an error or timeout occurred.
+ */
+void *gpum_copy_pitched_wc(void *dst, const void *src, uint32_t line_len,
+                           uint32_t lines, uint32_t pitch_in, uint32_t pitch_out);
+
+
+/**
  * @brief Checks if a virtual memory range is physically contiguous in system RAM.
  *
  * Informational query: M2M copies do not require contiguous memory as page-walking
