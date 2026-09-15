@@ -85,16 +85,17 @@
 
 #include "gpu_m2m.h"
 
-#include <cstring>
 #include <cstdbool>
+#include <cstring>
 
+#include <pbkit/nv_objects.h>
 #include <pbkit/pbkit.h>
 #include <pbkit/pbkit_dma.h>
 #include <pbkit/pbkit_pushbuffer.h>
-#include <pbkit/nv_objects.h>
 #include <xboxkrnl/xboxkrnl.h>
 
 #include "nv2astate.h"
+#include "pbkpp_assert.h"
 #include "pushbuffer.h"
 
 using namespace PBKitPlusPlus;
@@ -199,7 +200,7 @@ int gpum_init(void)
 
 static void m2mf_kick(uint32_t dst_pa, uint32_t src_pa, uint32_t line_len,
                       uint32_t lines, uint32_t pitch_in, uint32_t pitch_out,
-                      int live)
+                      uint32_t format, int live)
 {
     if (live != g_bound_live) {
         Pushbuffer::PushTo(kM2MSubchannel, NV_MEMORY_TO_MEMORY_FORMAT_DMA_NOTIFY,
@@ -210,7 +211,7 @@ static void m2mf_kick(uint32_t dst_pa, uint32_t src_pa, uint32_t line_len,
                        src_pa, dst_pa);
     Pushbuffer::PushTo(kM2MSubchannel, NV_MEMORY_TO_MEMORY_FORMAT_PITCH_IN,
                        pitch_in, pitch_out, line_len, lines);
-    Pushbuffer::PushTo(kM2MSubchannel, NV_MEMORY_TO_MEMORY_FORMAT_FORMAT, 0x0101, 0);
+    Pushbuffer::PushTo(kM2MSubchannel, NV_MEMORY_TO_MEMORY_FORMAT_FORMAT, format, 0);
 }
 
 /* one physically contiguous stretch, chunked to the engine's limits;
@@ -218,7 +219,7 @@ static void m2mf_kick(uint32_t dst_pa, uint32_t src_pa, uint32_t line_len,
 static void emit_run(uint32_t d, uint32_t s, size_t n, int final_live)
 {
     while (n > g_line * (size_t)M2MF_MAXLINES) {
-        m2mf_kick(d, s, g_line, M2MF_MAXLINES, g_line, g_line, 0);
+        m2mf_kick(d, s, g_line, M2MF_MAXLINES, g_line, g_line, 0x0101, 0);
         d += g_line * M2MF_MAXLINES;
         s += g_line * M2MF_MAXLINES;
         n -= g_line * (size_t)M2MF_MAXLINES;
@@ -226,13 +227,13 @@ static void emit_run(uint32_t d, uint32_t s, size_t n, int final_live)
     if (n >= g_line) {
         uint32_t lines = (uint32_t)(n / g_line);
         int last = (n % g_line) == 0;
-        m2mf_kick(d, s, g_line, lines, g_line, g_line, last && final_live);
+        m2mf_kick(d, s, g_line, lines, g_line, g_line, 0x0101, last && final_live);
         d += lines * g_line;
         s += lines * g_line;
         n -= (size_t)lines * g_line;
         if (last) return;
     }
-    m2mf_kick(d, s, (uint32_t)n, 1, (uint32_t)n, (uint32_t)n, final_live);
+    m2mf_kick(d, s, (uint32_t)n, 1, (uint32_t)n, (uint32_t)n, 0x0101, final_live);
 }
 
 /* Tuning hook: bytes per M2MF line (default 4096).  The engine alternates
@@ -308,25 +309,35 @@ void gpum_start(void *dst, const void *src, size_t n)
     Pushbuffer::End();
 }
 
-static inline void memcpy_pitched(char *dst, const char *src, uint32_t line_len,
-                        uint32_t lines, uint32_t pitch_in, uint32_t pitch_out)
+static inline void memcpy_strided(char *dst, const char *src, uint32_t line_len,
+                                  uint32_t lines, uint32_t pitch_in, uint32_t pitch_out,
+                                  uint32_t stride_in, uint32_t stride_out)
 {
-    for (uint32_t i = 0; i < lines; i++) {
-        memcpy(dst, src, line_len);
-        src += pitch_in;
-        dst += pitch_out;
+    for (uint32_t y = 0; y < lines; y++) {
+        const char *s = src + y * pitch_in;
+        char *d = dst + y * pitch_out;
+        for (uint32_t x = 0; x < line_len; x++) {
+            *d = *s;
+            s += stride_in;
+            d += stride_out;
+        }
     }
 }
 
-void gpum_start_pitched(void *dst, const void *src, uint32_t line_len,
-                        uint32_t lines, uint32_t pitch_in, uint32_t pitch_out)
+
+void gpum_start_strided(void *dst, const void *src, uint32_t line_len,
+                        uint32_t lines, uint32_t pitch_in, uint32_t pitch_out,
+                        uint32_t stride_in, uint32_t stride_out)
 {
+    PBKPP_ASSERT(stride_in >= 1);
+    PBKPP_ASSERT(stride_out >= 1);
+
     if (!g_notif && !g_fallback_to_memcpy) {
         if (gpum_init() < 0) return;
     }
 
     if (g_fallback_to_memcpy) {
-        memcpy_pitched((char*)dst, (char*)src, line_len, lines, pitch_in, pitch_out);
+        memcpy_strided((char*)dst, (char*)src, line_len, lines, pitch_in, pitch_out, stride_in, stride_out);
         return;
     }
 
@@ -344,18 +355,25 @@ void gpum_start_pitched(void *dst, const void *src, uint32_t line_len,
 
     uint32_t s_pa = phys(src);
     uint32_t d_pa = phys(dst);
+    uint32_t format = ((stride_out & 0xFF) << 8) | (stride_in & 0xFF);
 
     Pushbuffer::Begin();
 
     while (lines > M2MF_MAXLINES) {
-        m2mf_kick(d_pa, s_pa, line_len, M2MF_MAXLINES, pitch_in, pitch_out, 0);
+        m2mf_kick(d_pa, s_pa, line_len, M2MF_MAXLINES, pitch_in, pitch_out, format, 0);
         d_pa += M2MF_MAXLINES * pitch_out;
         s_pa += M2MF_MAXLINES * pitch_in;
         lines -= M2MF_MAXLINES;
     }
-    m2mf_kick(d_pa, s_pa, line_len, lines, pitch_in, pitch_out, 1);
+    m2mf_kick(d_pa, s_pa, line_len, lines, pitch_in, pitch_out, format, 1);
 
     Pushbuffer::End();
+}
+
+void gpum_start_pitched(void *dst, const void *src, uint32_t line_len,
+                        uint32_t lines, uint32_t pitch_in, uint32_t pitch_out)
+{
+    gpum_start_strided(dst, src, line_len, lines, pitch_in, pitch_out, 1, 1);
 }
 
 int gpum_done(void)
@@ -435,34 +453,54 @@ void *gpum_copy_wc(void *dst, const void *src, size_t n)
     return gpum_wait() == 0 ? dst : NULL;
 }
 
-void *gpum_copy_pitched(void *dst, const void *src, uint32_t line_len,
-                        uint32_t lines, uint32_t pitch_in, uint32_t pitch_out)
+void *gpum_copy_strided(void *dst, const void *src, uint32_t line_len,
+                        uint32_t lines, uint32_t pitch_in, uint32_t pitch_out,
+                        uint32_t stride_in, uint32_t stride_out)
 {
+    PBKPP_ASSERT(stride_in >= 1);
+    PBKPP_ASSERT(stride_out >= 1);
+
     if (!g_notif && !g_fallback_to_memcpy) {
         gpum_init();
     }
     if (g_fallback_to_memcpy) {
-        memcpy_pitched((char*)dst, (char*)src, line_len, lines, pitch_in, pitch_out);
+        memcpy_strided((char*)dst, (char*)src, line_len, lines, pitch_in, pitch_out, stride_in, stride_out);
         return dst;
     }
     cpu_wbinvd();
-    gpum_start_pitched(dst, src, line_len, lines, pitch_in, pitch_out);
+    gpum_start_strided(dst, src, line_len, lines, pitch_in, pitch_out, stride_in, stride_out);
     return gpum_wait() == 0 ? dst : NULL;
+}
+
+void *gpum_copy_strided_wc(void *dst, const void *src, uint32_t line_len,
+                           uint32_t lines, uint32_t pitch_in, uint32_t pitch_out,
+                           uint32_t stride_in, uint32_t stride_out)
+{
+    PBKPP_ASSERT(stride_in >= 1);
+    PBKPP_ASSERT(stride_out >= 1);
+
+    if (!g_notif && !g_fallback_to_memcpy) {
+        gpum_init();
+    }
+    if (g_fallback_to_memcpy) {
+        memcpy_strided((char*)dst, (char*)src, line_len, lines, pitch_in, pitch_out, stride_in, stride_out);
+        return dst;
+    }
+    cpu_sfence();
+    gpum_start_strided(dst, src, line_len, lines, pitch_in, pitch_out, stride_in, stride_out);
+    return gpum_wait() == 0 ? dst : NULL;
+}
+
+void *gpum_copy_pitched(void *dst, const void *src, uint32_t line_len,
+                        uint32_t lines, uint32_t pitch_in, uint32_t pitch_out)
+{
+    return gpum_copy_strided(dst, src, line_len, lines, pitch_in, pitch_out, 1, 1);
 }
 
 void *gpum_copy_pitched_wc(void *dst, const void *src, uint32_t line_len,
                            uint32_t lines, uint32_t pitch_in, uint32_t pitch_out)
 {
-    if (!g_notif && !g_fallback_to_memcpy) {
-        gpum_init();
-    }
-    if (g_fallback_to_memcpy) {
-        memcpy_pitched((char*)dst, (char*)src, line_len, lines, pitch_in, pitch_out);
-        return dst;
-    }
-    cpu_sfence();
-    gpum_start_pitched(dst, src, line_len, lines, pitch_in, pitch_out);
-    return gpum_wait() == 0 ? dst : NULL;
+    return gpum_copy_strided_wc(dst, src, line_len, lines, pitch_in, pitch_out, 1, 1);
 }
 
 int gpum_is_contiguous(const void *p, size_t n)

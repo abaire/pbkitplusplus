@@ -267,6 +267,60 @@ void *gpum_copy_pitched(void *dst, const void *src, uint32_t line_len,
 void *gpum_copy_pitched_wc(void *dst, const void *src, uint32_t line_len,
                            uint32_t lines, uint32_t pitch_in, uint32_t pitch_out);
 
+/**
+ * @brief Queues an asynchronous 2D strided memory-to-memory copy on the NV2A M2MF engine (class 0x39).
+ *
+ * Performs a 2D pitched transfer allowing per-element source and destination stride stepping to be specified.
+ * The format word pushed to NV_MEMORY_TO_MEMORY_FORMAT_FORMAT is configured as:
+ *   (stride_out << 8) | (stride_in & 0xFF)
+ *
+ * @param dst Destination memory pointer (virtual address). Must be physically contiguous.
+ * @param src Source memory pointer (virtual address). Must be physically contiguous.
+ * @param line_len Number of elements to copy per row.
+ * @param lines Number of rows to copy.
+ * @param pitch_in Source row stride in bytes.
+ * @param pitch_out Destination row stride in bytes.
+ * @param stride_in Source element stride in bytes (must be >= 1).
+ * @param stride_out Destination element stride in bytes (must be >= 1).
+ */
+void gpum_start_strided(void *dst, const void *src, uint32_t line_len,
+                        uint32_t lines, uint32_t pitch_in, uint32_t pitch_out,
+                        uint32_t stride_in, uint32_t stride_out);
+
+/**
+ * @brief Synchronously copies 2D strided memory using the GPU M2M engine with Write-Back (WB) cache coherency.
+ *
+ * @param dst Destination memory pointer (virtual address). Must be physically contiguous.
+ * @param src Source memory pointer (virtual address). Must be physically contiguous.
+ * @param line_len Number of elements to copy per row.
+ * @param lines Number of rows to copy.
+ * @param pitch_in Source row stride in bytes.
+ * @param pitch_out Destination row stride in bytes.
+ * @param stride_in Source element stride in bytes (must be >= 1).
+ * @param stride_out Destination element stride in bytes (must be >= 1).
+ * @return Pointer to dst on success, or NULL if an error or timeout occurred.
+ */
+void *gpum_copy_strided(void *dst, const void *src, uint32_t line_len,
+                        uint32_t lines, uint32_t pitch_in, uint32_t pitch_out,
+                        uint32_t stride_in, uint32_t stride_out);
+
+/**
+ * @brief Synchronously copies 2D strided memory using the GPU M2M engine with Write-Combining (WC) store fence.
+ *
+ * @param dst Destination memory pointer (virtual address). Must be physically contiguous.
+ * @param src Source memory pointer (virtual address). Must be physically contiguous.
+ * @param line_len Number of elements to copy per row.
+ * @param lines Number of rows to copy.
+ * @param pitch_in Source row stride in bytes.
+ * @param pitch_out Destination row stride in bytes.
+ * @param stride_in Source element stride in bytes (must be >= 1).
+ * @param stride_out Destination element stride in bytes (must be >= 1).
+ * @return Pointer to dst on success, or NULL if an error or timeout occurred.
+ */
+void *gpum_copy_strided_wc(void *dst, const void *src, uint32_t line_len,
+                           uint32_t lines, uint32_t pitch_in, uint32_t pitch_out,
+                           uint32_t stride_in, uint32_t stride_out);
+
 
 /**
  * @brief Checks if a virtual memory range is physically contiguous in system RAM.
