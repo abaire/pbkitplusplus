@@ -360,8 +360,8 @@ int TextureStage::SetTexture(const SDL_Surface *surface, uint8_t *memory_base) c
         }
       } break;
 
-      case NV097_SET_TEXTURE_FORMAT_COLOR_LU_IMAGE_R16B16:
-      case NV097_SET_TEXTURE_FORMAT_COLOR_SZ_R16B16: {
+      case NV097_SET_TEXTURE_FORMAT_COLOR_LU_IMAGE_YB16YA16:
+      case NV097_SET_TEXTURE_FORMAT_COLOR_SZ_YB_16_YA_16: {
         uint32_t *source = pixels;
         if (format_.xbox_swizzled) {
           swizzle_bpp = 4;
