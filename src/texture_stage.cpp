@@ -13,11 +13,34 @@ using namespace XboxMath;
 namespace PBKitPlusPlus {
 
 // bitscan forward
-static int bsf(int val){__asm bsf eax, val}
+static int bsf(int val) { __asm bsf eax, val }
 
-TextureStage::TextureStage() {
-  MatrixSetIdentity(texture_matrix_);
+static inline uint16_t FloatToZ16(float val) {
+  if (val <= 0.0f) {
+    return 0;
+  }
+
+  uint32_t int_val = *reinterpret_cast<const uint32_t *>(&val);
+  if (int_val < 0x3C000000) {
+    return 0;
+  }
+  if (int_val >= 0x43FFF800) {
+    return 0xFFFF;
+  }
+
+  return static_cast<uint16_t>((int_val - 0x3C000000 + 0x400) >> 11);
 }
+
+static inline uint32_t FloatToZ24(float val) {
+  if (val <= 0.0f) {
+    return 0;
+  }
+
+  uint32_t int_val = *reinterpret_cast<const uint32_t *>(&val);
+  return (int_val >> 7) & 0x00FFFFFF;
+}
+
+TextureStage::TextureStage() { MatrixSetIdentity(texture_matrix_); }
 
 bool TextureStage::RequiresColorspaceConversion() const {
   return format_.xbox_format == NV097_SET_TEXTURE_FORMAT_COLOR_LC_IMAGE_CR8YB8CB8YA8 ||
@@ -257,6 +280,7 @@ int TextureStage::SetTexture(const SDL_Surface *surface, uint8_t *memory_base) c
       } break;
 
       case NV097_SET_TEXTURE_FORMAT_COLOR_SZ_Y16:
+      case NV097_SET_TEXTURE_FORMAT_COLOR_SZ_DEPTH_Y16_FIXED:
       case NV097_SET_TEXTURE_FORMAT_COLOR_LU_IMAGE_Y16:
       case NV097_SET_TEXTURE_FORMAT_COLOR_LU_IMAGE_DEPTH_Y16_FIXED: {
         // Treat the source as a 32-bit depth value and remap to 16 bit.
@@ -279,9 +303,70 @@ int TextureStage::SetTexture(const SDL_Surface *surface, uint8_t *memory_base) c
         }
       } break;
 
+      case NV097_SET_TEXTURE_FORMAT_COLOR_SZ_DEPTH_Y16_FLOAT:
       case NV097_SET_TEXTURE_FORMAT_COLOR_LU_IMAGE_DEPTH_Y16_FLOAT: {
-        // TODO: Implement conversion to float.
-        PBKPP_ASSERT(!"Y16 float format not supported.");
+        uint32_t *source = pixels;
+        if (format_.xbox_swizzled) {
+          swizzle_bpp = 2;
+          swizzle_pitch = swizzle_w * swizzle_bpp;
+          converted = new uint8_t[swizzle_pitch * swizzle_h * swizzle_depth];
+          dest = converted;
+        }
+        for (int y = 0; y < surface->h; ++y) {
+          for (int x = 0; x < surface->w; ++x, ++source) {
+            uint8_t red, green, blue;
+            SDL_GetRGB(source[0], surface->format, &red, &green, &blue);
+            float y_norm = (0.299f * red + 0.587f * green + 0.114f * blue) / 255.0f;
+            uint16_t y_value = FloatToZ16(y_norm);
+            *dest++ = y_value & 0xFF;
+            *dest++ = (y_value >> 8) & 0xFF;
+          }
+        }
+      } break;
+
+      case NV097_SET_TEXTURE_FORMAT_COLOR_SZ_DEPTH_X8_Y24_FIXED:
+      case NV097_SET_TEXTURE_FORMAT_COLOR_LU_IMAGE_DEPTH_X8_Y24_FIXED: {
+        uint32_t *source = pixels;
+        if (format_.xbox_swizzled) {
+          swizzle_bpp = 4;
+          swizzle_pitch = swizzle_w * swizzle_bpp;
+          converted = new uint8_t[swizzle_pitch * swizzle_h * swizzle_depth];
+          dest = converted;
+        }
+        for (int y = 0; y < surface->h; ++y) {
+          for (int x = 0; x < surface->w; ++x, ++source) {
+            uint8_t red, green, blue;
+            SDL_GetRGB(source[0], surface->format, &red, &green, &blue);
+            float y_norm = (0.299f * red + 0.587f * green + 0.114f * blue) / 255.0f;
+            uint32_t y_value = static_cast<uint32_t>(y_norm * 16777215.0f);
+            *dest++ = 0;
+            *dest++ = y_value & 0xFF;
+            *dest++ = (y_value >> 8) & 0xFF;
+            *dest++ = (y_value >> 16) & 0xFF;
+          }
+        }
+      } break;
+
+      case NV097_SET_TEXTURE_FORMAT_COLOR_SZ_DEPTH_X8_Y24_FLOAT: {
+        uint32_t *source = pixels;
+        if (format_.xbox_swizzled) {
+          swizzle_bpp = 4;
+          swizzle_pitch = swizzle_w * swizzle_bpp;
+          converted = new uint8_t[swizzle_pitch * swizzle_h * swizzle_depth];
+          dest = converted;
+        }
+        for (int y = 0; y < surface->h; ++y) {
+          for (int x = 0; x < surface->w; ++x, ++source) {
+            uint8_t red, green, blue;
+            SDL_GetRGB(source[0], surface->format, &red, &green, &blue);
+            float y_norm = (0.299f * red + 0.587f * green + 0.114f * blue) / 255.0f;
+            uint32_t y_value = FloatToZ24(y_norm);
+            *dest++ = 0;
+            *dest++ = y_value & 0xFF;
+            *dest++ = (y_value >> 8) & 0xFF;
+            *dest++ = (y_value >> 16) & 0xFF;
+          }
+        }
       } break;
 
       case NV097_SET_TEXTURE_FORMAT_COLOR_LU_IMAGE_G8B8: {
