@@ -129,6 +129,31 @@ void GenerateRGBA444RadialAlphaPattern(void *target, uint32_t width, uint32_t he
  */
 void GenerateSwizzledRGBA444RadialAlphaPattern(void *target, uint32_t width, uint32_t height);
 
+/**
+ * @brief Generates an off-center radial depth test pattern in a buffer formatted for the specified depth format.
+ *
+ * Generates concentric depth rings radiating from an off-center origin (40% width, 40% height) with sawtooth
+ * ramps from 0.0 to 1.0. Encodes depth appropriate for 16-bit / 24-bit fixed or float hardware formats.
+ *
+ * @param target A pointer to the buffer to populate.
+ * @param width The width of the image in pixels.
+ * @param height The height of the image in pixels.
+ * @param is_16_bit True for 16-bit depth formats, false for 24/32-bit depth formats.
+ * @param is_float True for floating-point depth formats, false for fixed-point depth formats.
+ */
+void GenerateRadialDepthPattern(void *target, uint32_t width, uint32_t height, bool is_16_bit, bool is_float);
+
+/**
+ * @brief Generates a swizzled off-center radial depth test pattern.
+ *
+ * @param target A pointer to the swizzled buffer to populate.
+ * @param width The width of the image in pixels.
+ * @param height The height of the image in pixels.
+ * @param is_16_bit True for 16-bit depth formats, false for 24/32-bit depth formats.
+ * @param is_float True for floating-point depth formats, false for fixed-point depth formats.
+ */
+void GenerateSwizzledRadialDepthPattern(void *target, uint32_t width, uint32_t height, bool is_16_bit, bool is_float);
+
 }  // namespace PBKitPlusPlus
 
 #endif  // PBKITPLUSPLUS_TEXTURE_GENERATOR_H

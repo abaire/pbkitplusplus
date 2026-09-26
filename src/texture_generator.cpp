@@ -476,4 +476,67 @@ void GenerateSwizzledRGBA444RadialAlphaPattern(void *target, uint32_t width, uin
   delete[] temp_buffer;
 }
 
+void GenerateRadialDepthPattern(void *target, uint32_t width, uint32_t height, bool is_16_bit, bool is_float) {
+  PBKPP_ASSERT(target);
+  PBKPP_ASSERT(width > 1);
+  PBKPP_ASSERT(height > 1);
+
+  const float cx = static_cast<float>(width - 1) * 0.4f;
+  const float cy = static_cast<float>(height - 1) * 0.4f;
+  const float max_dist_sq =
+      std::max({cx * cx + cy * cy, (width - 1.0f - cx) * (width - 1.0f - cx) + cy * cy,
+                cx * cx + (height - 1.0f - cy) * (height - 1.0f - cy),
+                (width - 1.0f - cx) * (width - 1.0f - cx) + (height - 1.0f - cy) * (height - 1.0f - cy)});
+  const float max_dist = std::sqrt(max_dist_sq);
+
+  for (uint32_t y = 0; y < height; ++y) {
+    const float dy = static_cast<float>(y) - cy;
+    for (uint32_t x = 0; x < width; ++x) {
+      const float dx = static_cast<float>(x) - cx;
+      const float dist = std::sqrt(dx * dx + dy * dy);
+      const float norm_dist = dist / max_dist;
+      const float ring = norm_dist * 4.0f;
+      float z = ring - std::floor(ring);
+      if (z < 0.0f) {
+        z = 0.0f;
+      } else if (z > 1.0f) {
+        z = 1.0f;
+      }
+
+      const uint32_t idx = y * width + x;
+      if (is_16_bit) {
+        auto buf = static_cast<uint16_t *>(target);
+        if (is_float) {
+          double z_scaled = static_cast<double>(z) * 511.9375;
+          uint32_t bits_h = *(reinterpret_cast<uint32_t *>(&z_scaled) + 1);
+          buf[idx] = (z == 0.0f) ? 0 : (((bits_h >> 8) - 0x3F8000) & 0xFFFF);
+        } else {
+          buf[idx] = static_cast<uint16_t>(z * 65535.0f);
+        }
+      } else {
+        auto buf = static_cast<uint32_t *>(target);
+        if (is_float) {
+          double z_scaled = static_cast<double>(z) * 1.0e30;
+          uint32_t bits_h = *(reinterpret_cast<uint32_t *>(&z_scaled) + 1);
+          buf[idx] = (z == 0.0f) ? 0 : (((bits_h - 0x38000000) << 4) & 0xFFFFFF00);
+        } else {
+          auto raw_z = static_cast<uint32_t>(z * 16777215.0f);
+          buf[idx] = raw_z << 8;
+        }
+      }
+    }
+  }
+}
+
+void GenerateSwizzledRadialDepthPattern(void *target, uint32_t width, uint32_t height, bool is_16_bit, bool is_float) {
+  const uint32_t bpp = is_16_bit ? 2 : 4;
+  const uint32_t size = width * height * bpp;
+  auto temp_buffer = new uint8_t[size];
+
+  GenerateRadialDepthPattern(temp_buffer, width, height, is_16_bit, is_float);
+  swizzle_rect(temp_buffer, width, height, reinterpret_cast<uint8_t *>(target), width * bpp, bpp);
+
+  delete[] temp_buffer;
+}
+
 }  // namespace PBKitPlusPlus
