@@ -147,10 +147,11 @@ void TextureStage::Commit(uint32_t memory_dma_offset, uint32_t palette_dma_offse
     Pushbuffer::Push4x4Matrix(NV097_SET_TEXTURE_MATRIX + 64 * stage_, texture_matrix_[0]);
   }
 
-  Pushbuffer::Push(NV097_SET_TEXGEN_S, texgen_s_);
-  Pushbuffer::Push(NV097_SET_TEXGEN_T, texgen_t_);
-  Pushbuffer::Push(NV097_SET_TEXGEN_R, texgen_r_);
-  Pushbuffer::Push(NV097_SET_TEXGEN_Q, texgen_q_);
+  uint32_t texgen_offset = 16 * stage_;
+  Pushbuffer::Push(NV097_SET_TEXGEN_S + texgen_offset, texgen_s_);
+  Pushbuffer::Push(NV097_SET_TEXGEN_T + texgen_offset, texgen_t_);
+  Pushbuffer::Push(NV097_SET_TEXGEN_R + texgen_offset, texgen_r_);
+  Pushbuffer::Push(NV097_SET_TEXGEN_Q + texgen_offset, texgen_q_);
 
   Pushbuffer::End();
 }
