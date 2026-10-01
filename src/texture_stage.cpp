@@ -132,10 +132,9 @@ void TextureStage::Commit(uint32_t memory_dma_offset, uint32_t palette_dma_offse
   // NV097_SET_TEXTURE_PALETTE
   Pushbuffer::Push(NV20_TCL_PRIMITIVE_3D_TX_PALETTE_OFFSET(stage_), palette_config);
 
-  Pushbuffer::Push(NV097_SET_TEXTURE_BORDER_COLOR, border_color_);
-
   {
     uint32_t stage_offset = 64 * stage_;
+    Pushbuffer::Push(NV097_SET_TEXTURE_BORDER_COLOR + stage_offset, border_color_);
     Pushbuffer::PushF(NV097_SET_TEXTURE_SET_BUMP_ENV_MAT + stage_offset, bump_env_matrix[0], bump_env_matrix[1],
                       bump_env_matrix[2], bump_env_matrix[3]);
     Pushbuffer::PushF(NV097_SET_TEXTURE_SET_BUMP_ENV_SCALE + stage_offset, bump_env_luminance_scale);
