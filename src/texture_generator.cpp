@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <vector>
 
 #include "pbkpp_assert.h"
 #include "xbox-swizzle/swizzle.h"
@@ -537,6 +538,52 @@ void GenerateSwizzledRadialDepthPattern(void *target, uint32_t width, uint32_t h
   swizzle_rect(temp_buffer, width, height, reinterpret_cast<uint8_t *>(target), width * bpp, bpp);
 
   delete[] temp_buffer;
+}
+
+void GenerateSwizzledPalettizedCheckerboard(void *target, int width, int height, int palette_size) {
+  std::vector<uint8_t> temp_buffer(width * height);
+  uint8_t color1 = 0;
+  uint8_t color2 = palette_size - 1;
+  for (int y = 0; y < height; ++y) {
+    for (int x = 0; x < width; ++x) {
+      temp_buffer[y * width + x] = ((x / 8) % 2 == (y / 8) % 2) ? color2 : color1;
+    }
+  }
+  swizzle_rect(temp_buffer.data(), width, height, static_cast<uint8_t *>(target), width, 1);
+}
+
+void GenerateSwizzledPalettizedRadial(void *target, int width, int height, int palette_size) {
+  std::vector<uint8_t> temp_buffer(width * height);
+  float cx = width / 2.0f;
+  float cy = height / 2.0f;
+  float max_dist = sqrtf(cx * cx + cy * cy);
+  for (int y = 0; y < height; ++y) {
+    for (int x = 0; x < width; ++x) {
+      float dx = x - cx;
+      float dy = y - cy;
+      float dist = sqrtf(dx * dx + dy * dy);
+      auto index = static_cast<int>((dist / max_dist) * (palette_size - 1));
+      if (index >= palette_size) {
+        index = palette_size - 1;
+      }
+      temp_buffer[y * width + x] = index;
+    }
+  }
+  swizzle_rect(temp_buffer.data(), width, height, static_cast<uint8_t *>(target), width, 1);
+}
+
+void GenerateSwizzledPalettizedGradient(void *target, int width, int height, int palette_size) {
+  std::vector<uint8_t> temp_buffer(width * height);
+  for (int y = 0; y < height; ++y) {
+    for (int x = 0; x < width; ++x) {
+      auto index = static_cast<int>(((float)(x + y) / (float)(width + height - 2)) * (palette_size - 1));
+      if (index >= palette_size) {
+        index = palette_size - 1;
+      }
+      temp_buffer[y * width + x] = index;
+    }
+  }
+  swizzle_rect(temp_buffer.data(), width, height, static_cast<uint8_t *>(target), width, 1);
 }
 
 }  // namespace PBKitPlusPlus

@@ -76,7 +76,7 @@ void GenerateSwizzledRGBRadialGradient(void *target, int width, int height, uint
 //! pixel coordinates. This ensures that any two adjacent pixels have a large
 //! difference in their color and brightness values.
 //!
-//! @param buffer A pointer to the 32-bit RGBA buffer to be filled.
+//! @param target A pointer to the 32-bit RGBA buffer to be filled.
 //! @param width The width of the image in pixels.
 //! @param height The height of the image in pixels.
 //! @param alpha The alpha value set for every pixel in the region
@@ -90,7 +90,7 @@ void GenerateRGBMaxContrastNoisePattern(void *target, int width, int height, uin
 //! pixel coordinates. This ensures that any two adjacent pixels have a large
 //! difference in their color and brightness values.
 //!
-//! @param buffer A pointer to the 32-bit RGBA buffer to be filled.
+//! @param target A pointer to the 32-bit RGBA buffer to be filled.
 //! @param width The width of the image in pixels.
 //! @param height The height of the image in pixels.
 //! @param alpha The alpha value set for every pixel in the region
@@ -107,7 +107,7 @@ void GenerateSwizzledRGBMaxContrastNoisePattern(void *target, int width, int hei
  * - Bottom-Right: 0xF00 (highest 4 bits of the low 12 are 0xF)
  * - Bottom-Left:  0xFFF (all 12 bits are 0xF)
  *
- * @param buffer A pointer to the 16-bit buffer to populate.
+ * @param target A pointer to the 16-bit buffer to populate.
  * @param width The width of the image in pixels.
  * @param height The height of the image in pixels.
  */
@@ -123,7 +123,7 @@ void GenerateRGBA444RadialAlphaPattern(void *target, uint32_t width, uint32_t he
  * - Bottom-Right: 0xF00 (highest 4 bits of the low 12 are 0xF)
  * - Bottom-Left:  0xFFF (all 12 bits are 0xF)
  *
- * @param buffer A pointer to the 16-bit buffer to populate.
+ * @param target A pointer to the 16-bit buffer to populate.
  * @param width The width of the image in pixels.
  * @param height The height of the image in pixels.
  */
@@ -153,6 +153,43 @@ void GenerateRadialDepthPattern(void *target, uint32_t width, uint32_t height, b
  * @param is_float True for floating-point depth formats, false for fixed-point depth formats.
  */
 void GenerateSwizzledRadialDepthPattern(void *target, uint32_t width, uint32_t height, bool is_16_bit, bool is_float);
+
+/**
+ * @brief Generates a swizzled 8-bit palettized checkerboard test pattern.
+ *
+ * Alternates between index 0 and index (palette_size - 1) in an 8x8 checkerboard pattern.
+ *
+ * @param target A pointer to the swizzled 8-bit destination buffer to populate.
+ * @param width The width of the texture in pixels.
+ * @param height The height of the texture in pixels.
+ * @param palette_size Number of entries in the palette, used to determine the maximum palette index.
+ */
+void GenerateSwizzledPalettizedCheckerboard(void *target, int width, int height, int palette_size);
+
+/**
+ * @brief Generates a swizzled 8-bit palettized radial gradient test pattern.
+ *
+ * Maps palette indices linearly from 0 at the center to (palette_size - 1) at the corners based on distance from the
+ * center.
+ *
+ * @param target A pointer to the swizzled 8-bit destination buffer to populate.
+ * @param width The width of the texture in pixels.
+ * @param height The height of the texture in pixels.
+ * @param palette_size Number of entries in the palette, used to scale the gradient indices.
+ */
+void GenerateSwizzledPalettizedRadial(void *target, int width, int height, int palette_size);
+
+/**
+ * @brief Generates a swizzled 8-bit palettized diagonal linear gradient test pattern.
+ *
+ * Maps palette indices linearly from 0 at the top-left to (palette_size - 1) at the bottom-right based on (x + y).
+ *
+ * @param target A pointer to the swizzled 8-bit destination buffer to populate.
+ * @param width The width of the texture in pixels.
+ * @param height The height of the texture in pixels.
+ * @param palette_size Number of entries in the palette, used to scale the gradient indices.
+ */
+void GenerateSwizzledPalettizedGradient(void *target, int width, int height, int palette_size);
 
 }  // namespace PBKitPlusPlus
 
