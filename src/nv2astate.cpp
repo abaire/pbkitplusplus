@@ -38,9 +38,6 @@ static void GetCompositeMatrix(matrix4_t &result, const matrix4_t &model_view, c
 // From pbkit.c, DMA_A is set to channel 3 by default
 // NV097_SET_CONTEXT_DMA_A == NV20_TCL_PRIMITIVE_3D_SET_OBJECT1
 static constexpr uint32_t kDefaultDMAChannelA = 3;
-// From pbkit.c, DMA_B is set to channel 11 by default
-// NV097_SET_CONTEXT_DMA_B == NV20_TCL_PRIMITIVE_3D_SET_OBJECT2
-static constexpr uint32_t kDefaultDMAChannelB = 11;
 // From pbkit.c, DMA_COLOR is set to channel 9 by default
 // NV097_SET_CONTEXT_DMA_COLOR == NV20_TCL_PRIMITIVE_3D_SET_OBJECT3
 const uint32_t kDefaultDMAColorChannel = 9;
@@ -1665,7 +1662,8 @@ void NV2AState::RenderToSurfaceStart(void *surface_address, SurfaceColorFormat c
                                      uint32_t clip_x, uint32_t clip_y, uint32_t clip_width, uint32_t clip_height,
                                      AntiAliasingSetting aa) {
   Pushbuffer::Begin();
-  Pushbuffer::Push(NV097_SET_CONTEXT_DMA_ZETA, kDefaultDMAChannelB);
+  // DMA_B is rebased to the active framebuffer by pbkit, so the absolute zeta_address must use the zero-based DMA_A.
+  Pushbuffer::Push(NV097_SET_CONTEXT_DMA_ZETA, kDefaultDMAChannelA);
   Pushbuffer::Push(NV097_SET_SURFACE_ZETA_OFFSET, VRAM_ADDR(zeta_address));
   Pushbuffer::End();
 
