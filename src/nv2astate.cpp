@@ -228,9 +228,7 @@ void NV2AState::PrepareDraw(uint32_t argb, uint32_t depth_value, uint8_t stencil
     vertex_shader_program_->PrepareDraw();
   }
 
-  while (pb_busy()) {
-    /* Wait for completion... */
-  }
+  PBKitBusyWait();
 }
 
 void NV2AState::SetVertexBufferAttributes(uint32_t enabled_fields) {
@@ -713,17 +711,17 @@ void NV2AState::SetTexCoord0S(int u, int v) const {
 }
 
 void NV2AState::SetTexCoord0(float s, float t, float p, float q) const {
-  auto pb = pb_begin();
-  pb = pb_push4f(pb, NV097_SET_TEXCOORD0_4F, s, t, p, q);
-  pb_end(pb);
+  Pushbuffer::Begin();
+  Pushbuffer::PushF(NV097_SET_TEXCOORD0_4F, s, t, p, q);
+  Pushbuffer::End();
 }
 
 void NV2AState::SetTexCoord0S(int s, int t, int p, int q) const {
-  auto pb = pb_begin();
+  Pushbuffer::Begin();
   uint32_t st = (s & 0xFFFF) | (t << 16);
   uint32_t pq = (p & 0xFFFF) | (q << 16);
-  pb = pb_push2(pb, NV097_SET_TEXCOORD0_4S, st, pq);
-  pb_end(pb);
+  Pushbuffer::Push(NV097_SET_TEXCOORD0_4S, st, pq);
+  Pushbuffer::End();
 }
 
 void NV2AState::SetTexCoord1(float u, float v) const {
@@ -740,17 +738,17 @@ void NV2AState::SetTexCoord1S(int u, int v) const {
 }
 
 void NV2AState::SetTexCoord1(float s, float t, float p, float q) const {
-  auto pb = pb_begin();
-  pb = pb_push4f(pb, NV097_SET_TEXCOORD1_4F, s, t, p, q);
-  pb_end(pb);
+  Pushbuffer::Begin();
+  Pushbuffer::PushF(NV097_SET_TEXCOORD1_4F, s, t, p, q);
+  Pushbuffer::End();
 }
 
 void NV2AState::SetTexCoord1S(int s, int t, int p, int q) const {
-  auto pb = pb_begin();
+  Pushbuffer::Begin();
   uint32_t st = (s & 0xFFFF) | (t << 16);
   uint32_t pq = (p & 0xFFFF) | (q << 16);
-  pb = pb_push2(pb, NV097_SET_TEXCOORD1_4S, st, pq);
-  pb_end(pb);
+  Pushbuffer::Push(NV097_SET_TEXCOORD1_4S, st, pq);
+  Pushbuffer::End();
 }
 
 void NV2AState::SetTexCoord2(float u, float v) const {
@@ -767,17 +765,17 @@ void NV2AState::SetTexCoord2S(int u, int v) const {
 }
 
 void NV2AState::SetTexCoord2(float s, float t, float p, float q) const {
-  auto pb = pb_begin();
-  pb = pb_push4f(pb, NV097_SET_TEXCOORD2_4F, s, t, p, q);
-  pb_end(pb);
+  Pushbuffer::Begin();
+  Pushbuffer::PushF(NV097_SET_TEXCOORD2_4F, s, t, p, q);
+  Pushbuffer::End();
 }
 
 void NV2AState::SetTexCoord2S(int s, int t, int p, int q) const {
-  auto pb = pb_begin();
+  Pushbuffer::Begin();
   uint32_t st = (s & 0xFFFF) | (t << 16);
   uint32_t pq = (p & 0xFFFF) | (q << 16);
-  pb = pb_push2(pb, NV097_SET_TEXCOORD2_4S, st, pq);
-  pb_end(pb);
+  Pushbuffer::Push(NV097_SET_TEXCOORD2_4S, st, pq);
+  Pushbuffer::End();
 }
 
 void NV2AState::SetTexCoord3(float u, float v) const {
@@ -794,17 +792,17 @@ void NV2AState::SetTexCoord3S(int u, int v) const {
 }
 
 void NV2AState::SetTexCoord3(float s, float t, float p, float q) const {
-  auto pb = pb_begin();
-  pb = pb_push4f(pb, NV097_SET_TEXCOORD3_4F, s, t, p, q);
-  pb_end(pb);
+  Pushbuffer::Begin();
+  Pushbuffer::PushF(NV097_SET_TEXCOORD3_4F, s, t, p, q);
+  Pushbuffer::End();
 }
 
 void NV2AState::SetTexCoord3S(int s, int t, int p, int q) const {
-  auto pb = pb_begin();
+  Pushbuffer::Begin();
   uint32_t st = (s & 0xFFFF) | (t << 16);
   uint32_t pq = (p & 0xFFFF) | (q << 16);
-  pb = pb_push2(pb, NV097_SET_TEXCOORD3_4S, st, pq);
-  pb_end(pb);
+  Pushbuffer::Push(NV097_SET_TEXCOORD3_4S, st, pq);
+  Pushbuffer::End();
 }
 
 void NV2AState::SetupControl0(bool enable_stencil_write, bool w_buffered, bool texture_perspective_enable) const {
@@ -898,6 +896,7 @@ int NV2AState::SetPalette(const uint32_t *palette, PaletteSize size, uint32_t st
 void NV2AState::SetPaletteSize(PaletteSize size, uint32_t stage) { texture_stage_[stage].SetPaletteSize(size); }
 
 void NV2AState::FinishDraw() {
+  // PBKitBusyWait submits any deferred commands, so pbkit may safely use the pushbuffer directly in pb_finished().
   PBKitBusyWait();
 
   /* Swap buffers (if we can) */
