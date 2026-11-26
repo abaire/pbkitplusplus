@@ -85,6 +85,18 @@ class Pushbuffer {
   //! Submits any pending commands and stops deferring submission.
   static void EndDeferredSubmit();
 
+  //! Cumulative counts of pushbuffer resets. Every reset waits for the GPU to finish all submitted work, so callers
+  //! timing a span of pushes can compare two snapshots to separate that wait from the time spent pushing.
+  struct ResetStats {
+    //! Number of resets performed, whether automatic (to avoid overflow) or requested via Flush().
+    uint32_t resets;
+    //! Total time spent in resets, in KeQueryPerformanceCounter ticks.
+    uint64_t wait_ticks;
+  };
+
+  //! Returns the cumulative reset statistics.
+  [[nodiscard]] static ResetStats GetResetStats() { return singleton_ ? singleton_->reset_stats_ : ResetStats{}; }
+
   //! Returns true if submission is currently deferred.
   [[nodiscard]] static bool IsSubmitDeferred() { return singleton_ && singleton_->submit_deferred_; }
 
@@ -197,6 +209,8 @@ class Pushbuffer {
 
   //! Number of DWORDs that may be pushed into one underlying pbkit block before it is submitted.
   uint32_t submit_interval_elements_ = 0;
+
+  ResetStats reset_stats_{};
 
   static Pushbuffer *singleton_;
 };

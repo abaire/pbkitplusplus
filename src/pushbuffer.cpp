@@ -1,6 +1,7 @@
 #include "pushbuffer.h"
 
 #include <pbkit/pbkit.h>
+#include <xboxkrnl/xboxkrnl.h>
 
 #include <cstring>
 
@@ -121,11 +122,16 @@ void Pushbuffer::SubmitBlock() {
 }
 
 void Pushbuffer::ResetPushbuffer() {
+  const auto start = KeQueryPerformanceCounter();
+
   while (pb_busy()) {
     /* Wait for completion... */
   }
 
   pb_reset();
+
+  ++reset_stats_.resets;
+  reset_stats_.wait_ticks += KeQueryPerformanceCounter() - start;
 
   current_block_elements_ = 0;
   total_block_elements_ = 0;
