@@ -216,11 +216,9 @@ class Pushbuffer {
   }
 
   //! Returns the bits of the given float.
-  static uint32_t Bits(float value) {
-    uint32_t ret;
-    std::memcpy(&ret, &value, sizeof(ret));
-    return ret;
-  }
+  //!
+  //! nxdk builds with -fno-builtin, so std::memcpy here would be an out-of-line call to a byte-at-a-time copy.
+  static uint32_t Bits(float value) { return __builtin_bit_cast(uint32_t, value); }
 
   //! Starts a new underlying pbkit block.
   void StartPbkitBlock();
@@ -400,7 +398,10 @@ inline void Pushbuffer::PushN(uint32_t command, uint32_t num_values, const DWORD
   PBKPP_ASSERT(values && num_values > 0 && num_values <= kMaxMethodParams && "Invalid PushN parameters");
   auto p = Allocate(num_values + 1);
   p[0] = Method(SUBCH_3D, command, num_values);
-  std::memcpy(p + 1, values, num_values * sizeof(*values));
+  // Copied one DWORD at a time, since nxdk builds with -fno-builtin and std::memcpy copies a byte at a time.
+  for (uint32_t i = 0; i < num_values; ++i) {
+    p[i + 1] = values[i];
+  }
 }
 
 }  // namespace PBKitPlusPlus
