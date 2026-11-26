@@ -9,10 +9,35 @@ namespace PBKitPlusPlus {
 
 //! Manages pb_kit pushbuffers to prevent overflows and optimize resets.
 //!
-//! In particular, this class manages the underlying pbkit begin/end block to
-//! transparently break large logical blocks into chunks under the max size
-//! allowed by pbkit.
+//! In particular, this class manages the underlying pbkit begin/end blocks,
+//! transparently splitting large logical blocks into smaller submissions and
+//! resetting the pushbuffer before it overflows.
+//!
+//! Each underlying pbkit block is submitted to the GPU when it ends, which
+//! flushes the write-combine cache and writes DMA_PUT. By default blocks are
+//! kept small, so every logical Begin()/End() pair (and every 96 DWORDs within
+//! one) costs a submission. Use BeginDeferredSubmit()/EndDeferredSubmit() (or
+//! DeferredSubmitScope) to accumulate many logical blocks into a single, larger
+//! submission.
 class Pushbuffer {
+ public:
+  //! Default number of DWORDs pushed between submissions while submission is deferred.
+  static constexpr uint32_t kDefaultSubmitIntervalDwords = 8 * 1024;
+
+  //! Defers submission for the lifetime of the scope. See BeginDeferredSubmit().
+  class DeferredSubmitScope {
+   public:
+    explicit DeferredSubmitScope(uint32_t submit_interval_dwords = kDefaultSubmitIntervalDwords) {
+      BeginDeferredSubmit(submit_interval_dwords);
+    }
+    ~DeferredSubmitScope() { EndDeferredSubmit(); }
+
+    DeferredSubmitScope(const DeferredSubmitScope &) = delete;
+    DeferredSubmitScope &operator=(const DeferredSubmitScope &) = delete;
+    DeferredSubmitScope(DeferredSubmitScope &&) = delete;
+    DeferredSubmitScope &operator=(DeferredSubmitScope &&) = delete;
+  };
+
  public:
   //! Initializes the pushbuffer singleton.
   static void Initialize();
@@ -21,10 +46,47 @@ class Pushbuffer {
   static void Begin();
 
   //! Commits any outstanding pushbuffer messages.
+  //!
+  //! While submission is deferred this does not submit anything unless `flush` is true.
   static void End(bool flush = false);
 
   //! Flushes and ressets the underlying pushbuffer.
+  //!
+  //! May be called while submission is deferred, in which case any pending
+  //! commands are submitted before the flush and submission remains deferred
+  //! afterwards.
   static void Flush();
+
+  //! Submits any commands pending due to deferred submission so that the GPU will process them.
+  //!
+  //! Does nothing if submission is not deferred. Must not be called inside a Begin()/End() block. After this call
+  //! (and until the next Begin() or push), pbkit's pushbuffer may be used directly (e.g., pb_finished()) even while
+  //! submission is deferred.
+  static void Submit();
+
+  //! Defers submission. Until EndDeferredSubmit() is called, Begin()/End()
+  //! pairs append to a single underlying pbkit block that is only submitted to
+  //! the GPU once `submit_interval_dwords` DWORDs have been pushed, when the
+  //! pushbuffer must be reset to avoid overflow, on Flush(), or on
+  //! EndDeferredSubmit().
+  //!
+  //! Must not be called inside a Begin()/End() block or while submission is
+  //! already deferred.
+  //!
+  //! While submission is deferred, the pbkit pushbuffer must not be used
+  //! directly (e.g., pb_begin()/pb_end(), pb_reset(), pb_draw_text_screen())
+  //! without first calling Submit(), as pbkit does not know about the pending
+  //! commands and will overwrite them.
+  //!
+  //! Note that debug builds of pbkit print a warning for any block larger than
+  //! 128 DWORDs.
+  static void BeginDeferredSubmit(uint32_t submit_interval_dwords = kDefaultSubmitIntervalDwords);
+
+  //! Submits any pending commands and stops deferring submission.
+  static void EndDeferredSubmit();
+
+  //! Returns true if submission is currently deferred.
+  [[nodiscard]] static bool IsSubmitDeferred() { return singleton_ && singleton_->submit_deferred_; }
 
   //! Pushes the given command and param to the given subchannel.
   static void PushTo(uint32_t subchannel, uint32_t command, uint32_t param1);
@@ -107,13 +169,34 @@ class Pushbuffer {
   //! Ensures that at least num_dwords values may be added to the pushbuffer.
   void Reserve(uint32_t num_dwords);
 
+  //! Starts a new underlying pbkit block.
+  void StartPbkitBlock();
+
+  //! Starts a new underlying pbkit block if one is not already open.
+  void EnsurePbkitBlock();
+
+  //! Ends the current underlying pbkit block, submitting it to the GPU.
+  void SubmitBlock();
+
+  //! Waits for the GPU to consume the pushbuffer and resets it to head.
+  void ResetPushbuffer();
+
   uint32_t *head_ = nullptr;
 
-  //! The number of dwords in the current begin/end block.
+  //! The number of dwords in the current underlying pbkit block.
   uint32_t current_block_elements_ = 0;
 
   //! The total number of dwords submitted since the last flush/reset.
   uint32_t total_block_elements_ = 0;
+
+  //! Whether submission is deferred.
+  bool submit_deferred_ = false;
+
+  //! Whether a logical Begin() is outstanding (only tracked while submission is deferred).
+  bool in_block_ = false;
+
+  //! Number of DWORDs that may be pushed into one underlying pbkit block before it is submitted.
+  uint32_t submit_interval_elements_ = 0;
 
   static Pushbuffer *singleton_;
 };

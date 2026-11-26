@@ -8,9 +8,11 @@
 
 namespace PBKitPlusPlus {
 
-// Maximum number of DWORDS per begin/end block, as enforced by pbkit with some headroom.
+// Number of DWORDs pushed into a pbkit block before it is submitted when submission is not deferred. This is not a
+// hardware limit; it keeps blocks under the 128 DWORD size that debug builds of pbkit warn about.
 static constexpr uint32_t kMaxElementsPerBlock = 96;
-// Maximum number of DWORDs in the pushbuffer, as defined by pbkit with some headroom.
+// Number of DWORDs that may be pushed before the pushbuffer is reset. pbkit does not wrap the pushbuffer, so everything
+// pushed between resets must fit within it. PBKIT_PUSHBUFFER_SIZE is in bytes, so this is ~80% of its DWORD capacity.
 static constexpr uint32_t kMaxElements = PBKIT_PUSHBUFFER_SIZE / 5;
 
 Pushbuffer *Pushbuffer::singleton_ = nullptr;
@@ -18,24 +20,32 @@ Pushbuffer *Pushbuffer::singleton_ = nullptr;
 void Pushbuffer::Initialize() {
   if (!singleton_) {
     singleton_ = new Pushbuffer();
+    singleton_->submit_interval_elements_ = kMaxElementsPerBlock;
   }
 }
 
 void Pushbuffer::Begin() {
   PBKPP_ASSERT(singleton_);
-  PBKPP_ASSERT(!singleton_->head_ && "Nested pushbuffer blocks are not supported");
 
-  singleton_->head_ = pb_begin();
-  singleton_->current_block_elements_ = 0;
+  if (singleton_->submit_deferred_) {
+    PBKPP_ASSERT(!singleton_->in_block_ && "Nested pushbuffer blocks are not supported");
+    singleton_->in_block_ = true;
+    singleton_->EnsurePbkitBlock();
+    return;
+  }
+
+  PBKPP_ASSERT(!singleton_->head_ && "Nested pushbuffer blocks are not supported");
+  singleton_->StartPbkitBlock();
 }
 
 void Pushbuffer::End(bool flush) {
-  PBKPP_ASSERT(singleton_->head_ && "End must not be called without Begin");
-
-  pb_end(singleton_->head_);
-
-  singleton_->current_block_elements_ = 0;
-  singleton_->head_ = nullptr;
+  if (singleton_->submit_deferred_) {
+    PBKPP_ASSERT(singleton_->in_block_ && "End must not be called without Begin");
+    singleton_->in_block_ = false;
+  } else {
+    PBKPP_ASSERT(singleton_->head_ && "End must not be called without Begin");
+    singleton_->SubmitBlock();
+  }
 
   if (flush) {
     Flush();
@@ -43,31 +53,109 @@ void Pushbuffer::End(bool flush) {
 }
 
 void Pushbuffer::Flush() {
-  PBKPP_ASSERT(!singleton_->head_ && "Flush must not be called within a pushbuffer block");
+  if (singleton_->submit_deferred_) {
+    PBKPP_ASSERT(!singleton_->in_block_ && "Flush must not be called within a pushbuffer block");
+    if (singleton_->head_) {
+      singleton_->SubmitBlock();
+    }
+    singleton_->ResetPushbuffer();
+    return;
+  }
 
+  PBKPP_ASSERT(!singleton_->head_ && "Flush must not be called within a pushbuffer block");
+  singleton_->ResetPushbuffer();
+}
+
+void Pushbuffer::Submit() {
+  PBKPP_ASSERT(singleton_);
+  if (singleton_->submit_deferred_) {
+    PBKPP_ASSERT(!singleton_->in_block_ && "Submit must not be called within a pushbuffer block");
+    if (singleton_->head_) {
+      singleton_->SubmitBlock();
+    }
+    return;
+  }
+
+  PBKPP_ASSERT(!singleton_->head_ && "Submit must not be called within a pushbuffer block");
+}
+
+void Pushbuffer::BeginDeferredSubmit(uint32_t submit_interval_dwords) {
+  PBKPP_ASSERT(singleton_);
+  PBKPP_ASSERT(!singleton_->submit_deferred_ && "Nested deferred submission is not supported");
+  PBKPP_ASSERT(!singleton_->head_ && "BeginDeferredSubmit must not be called within a pushbuffer block");
+  PBKPP_ASSERT(submit_interval_dwords > 0 && submit_interval_dwords < kMaxElements &&
+               "submit_interval_dwords must be less than the pushbuffer capacity");
+
+  singleton_->submit_deferred_ = true;
+  singleton_->in_block_ = false;
+  singleton_->submit_interval_elements_ = submit_interval_dwords;
+}
+
+void Pushbuffer::EndDeferredSubmit() {
+  PBKPP_ASSERT(singleton_ && singleton_->submit_deferred_ &&
+               "EndDeferredSubmit must not be called without BeginDeferredSubmit");
+  PBKPP_ASSERT(!singleton_->in_block_ && "EndDeferredSubmit must not be called within a pushbuffer block");
+
+  if (singleton_->head_) {
+    singleton_->SubmitBlock();
+  }
+  singleton_->submit_deferred_ = false;
+  singleton_->submit_interval_elements_ = kMaxElementsPerBlock;
+}
+
+void Pushbuffer::StartPbkitBlock() {
+  head_ = pb_begin();
+  current_block_elements_ = 0;
+}
+
+void Pushbuffer::EnsurePbkitBlock() {
+  if (!head_) {
+    StartPbkitBlock();
+  }
+}
+
+void Pushbuffer::SubmitBlock() {
+  pb_end(head_);
+  head_ = nullptr;
+  current_block_elements_ = 0;
+}
+
+void Pushbuffer::ResetPushbuffer() {
   while (pb_busy()) {
     /* Wait for completion... */
   }
 
   pb_reset();
 
-  singleton_->current_block_elements_ = 0;
-  singleton_->total_block_elements_ = 0;
+  current_block_elements_ = 0;
+  total_block_elements_ = 0;
 }
 
 void Pushbuffer::Reserve(uint32_t num_dwords) {
+  PBKPP_ASSERT(num_dwords < kMaxElements && "Single push exceeds the pushbuffer capacity");
+
+  if (submit_deferred_) {
+    // The pbkit block is opened lazily so that Submit() can hand the pushbuffer back to pbkit between blocks.
+    EnsurePbkitBlock();
+  }
+
   total_block_elements_ += num_dwords;
   current_block_elements_ += num_dwords;
 
   if (total_block_elements_ >= kMaxElements) {
-    End(true);
-    Begin();
+    SubmitBlock();
+    ResetPushbuffer();
+    StartPbkitBlock();
+    // The reserved DWORDs will be written into the new block.
+    total_block_elements_ = num_dwords;
+    current_block_elements_ = num_dwords;
     return;
   }
 
-  if (current_block_elements_ >= kMaxElementsPerBlock) {
-    End();
-    Begin();
+  if (current_block_elements_ >= submit_interval_elements_) {
+    SubmitBlock();
+    StartPbkitBlock();
+    current_block_elements_ = num_dwords;
   }
 }
 

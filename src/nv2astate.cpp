@@ -29,6 +29,9 @@
 
 using namespace XboxMath;
 
+// pbkit's framebuffer color format, as set by pb_set_color_format().
+extern "C" unsigned int pb_ColorFmt;
+
 namespace PBKitPlusPlus {
 
 static void SetVertexAttribute(uint32_t index, uint32_t format, uint32_t size, uint32_t stride, const void *data);
@@ -111,7 +114,31 @@ void NV2AState::ClearDepthStencilRegion(uint32_t depth_value, uint8_t stencil_va
     height = framebuffer_height_;
   }
 
-  pb_set_depth_stencil_buffer_region(depth_buffer_format_, depth_value, stencil_value, left, top, width, height);
+  // pb_set_depth_stencil_buffer_region manipulates the pushbuffer in a way that is incompatible with deferred
+  // blocks, so it is more or less reproduced here.
+  const uint32_t right = left + width;
+  const uint32_t bottom = top + height;
+
+  uint32_t zstencil_value = 0;
+  switch (depth_buffer_format_) {
+    case SZF_Z16:
+      zstencil_value = depth_value & 0xFFFF;
+      break;
+
+    case SZF_Z24S8:
+      zstencil_value = ((depth_value & 0x00FFFFFF) << 8) | stencil_value;
+      break;
+
+    default:
+      PBKPP_ASSERT(!"Invalid depth buffer format");
+  }
+
+  Pushbuffer::Begin();
+  Pushbuffer::Push(NV097_SET_CLEAR_RECT_HORIZONTAL, ((right - 1) << 16) | (left & 0xFFFF));
+  Pushbuffer::Push(NV097_SET_CLEAR_RECT_VERTICAL, ((bottom - 1) << 16) | (top & 0xFFFF));
+  Pushbuffer::Push(NV097_SET_ZSTENCIL_CLEAR_VALUE, zstencil_value);
+  Pushbuffer::Push(NV097_CLEAR_SURFACE, NV097_CLEAR_SURFACE_Z | NV097_CLEAR_SURFACE_STENCIL);
+  Pushbuffer::End();
 }
 
 void NV2AState::ClearColorRegion(uint32_t argb, uint32_t left, uint32_t top, uint32_t width, uint32_t height) const {
@@ -121,7 +148,37 @@ void NV2AState::ClearColorRegion(uint32_t argb, uint32_t left, uint32_t top, uin
   if (!height || height > framebuffer_height_) {
     height = framebuffer_height_;
   }
-  pb_fill(static_cast<int>(left), static_cast<int>(top), static_cast<int>(width), static_cast<int>(height), argb);
+
+  // pb_fill manipulates the pushbuffer in a way that is incompatible with deferred
+  // blocks, so it is more or less reproduced here.
+
+  const uint32_t right = left + width;
+  const uint32_t bottom = top + height;
+
+  // The clear value must be in the format of pbkit's framebuffer.
+  uint32_t color = argb;
+  switch (pb_ColorFmt) {
+    case NV097_SET_SURFACE_FORMAT_COLOR_LE_X1R5G5B5_Z1R5G5B5:
+    case NV097_SET_SURFACE_FORMAT_COLOR_LE_X1R5G5B5_O1R5G5B5:
+      color = ((argb >> 16) & 0x8000) | ((argb >> 7) & 0x7C00) | ((argb >> 5) & 0x03E0) | ((argb >> 3) & 0x001F);
+      break;
+
+    case NV097_SET_SURFACE_FORMAT_COLOR_LE_R5G6B5:
+      color = ((argb >> 8) & 0xF800) | ((argb >> 5) & 0x07E0) | ((argb >> 3) & 0x001F);
+      break;
+
+    case NV097_SET_SURFACE_FORMAT_COLOR_LE_A8R8G8B8:
+      break;
+
+    default:
+      PBKPP_ASSERT(!"Invalid surface format");
+  }
+
+  Pushbuffer::Begin();
+  Pushbuffer::Push(NV097_SET_CLEAR_RECT_HORIZONTAL, ((right - 1) << 16) | left, ((bottom - 1) << 16) | top);
+  // Sets NV097_SET_ZSTENCIL_CLEAR_VALUE, NV097_SET_COLOR_CLEAR_VALUE, and NV097_CLEAR_SURFACE.
+  Pushbuffer::Push(NV097_SET_ZSTENCIL_CLEAR_VALUE, 0, color, NV097_CLEAR_SURFACE_COLOR);
+  Pushbuffer::End();
 }
 
 void NV2AState::EraseText() { pb_erase_text_screen(); }
@@ -228,9 +285,7 @@ void NV2AState::PrepareDraw(uint32_t argb, uint32_t depth_value, uint8_t stencil
     vertex_shader_program_->PrepareDraw();
   }
 
-  while (pb_busy()) {
-    /* Wait for completion... */
-  }
+  PBKitBusyWait();
 }
 
 void NV2AState::SetVertexBufferAttributes(uint32_t enabled_fields) {
@@ -713,17 +768,17 @@ void NV2AState::SetTexCoord0S(int u, int v) const {
 }
 
 void NV2AState::SetTexCoord0(float s, float t, float p, float q) const {
-  auto pb = pb_begin();
-  pb = pb_push4f(pb, NV097_SET_TEXCOORD0_4F, s, t, p, q);
-  pb_end(pb);
+  Pushbuffer::Begin();
+  Pushbuffer::PushF(NV097_SET_TEXCOORD0_4F, s, t, p, q);
+  Pushbuffer::End();
 }
 
 void NV2AState::SetTexCoord0S(int s, int t, int p, int q) const {
-  auto pb = pb_begin();
+  Pushbuffer::Begin();
   uint32_t st = (s & 0xFFFF) | (t << 16);
   uint32_t pq = (p & 0xFFFF) | (q << 16);
-  pb = pb_push2(pb, NV097_SET_TEXCOORD0_4S, st, pq);
-  pb_end(pb);
+  Pushbuffer::Push(NV097_SET_TEXCOORD0_4S, st, pq);
+  Pushbuffer::End();
 }
 
 void NV2AState::SetTexCoord1(float u, float v) const {
@@ -740,17 +795,17 @@ void NV2AState::SetTexCoord1S(int u, int v) const {
 }
 
 void NV2AState::SetTexCoord1(float s, float t, float p, float q) const {
-  auto pb = pb_begin();
-  pb = pb_push4f(pb, NV097_SET_TEXCOORD1_4F, s, t, p, q);
-  pb_end(pb);
+  Pushbuffer::Begin();
+  Pushbuffer::PushF(NV097_SET_TEXCOORD1_4F, s, t, p, q);
+  Pushbuffer::End();
 }
 
 void NV2AState::SetTexCoord1S(int s, int t, int p, int q) const {
-  auto pb = pb_begin();
+  Pushbuffer::Begin();
   uint32_t st = (s & 0xFFFF) | (t << 16);
   uint32_t pq = (p & 0xFFFF) | (q << 16);
-  pb = pb_push2(pb, NV097_SET_TEXCOORD1_4S, st, pq);
-  pb_end(pb);
+  Pushbuffer::Push(NV097_SET_TEXCOORD1_4S, st, pq);
+  Pushbuffer::End();
 }
 
 void NV2AState::SetTexCoord2(float u, float v) const {
@@ -767,17 +822,17 @@ void NV2AState::SetTexCoord2S(int u, int v) const {
 }
 
 void NV2AState::SetTexCoord2(float s, float t, float p, float q) const {
-  auto pb = pb_begin();
-  pb = pb_push4f(pb, NV097_SET_TEXCOORD2_4F, s, t, p, q);
-  pb_end(pb);
+  Pushbuffer::Begin();
+  Pushbuffer::PushF(NV097_SET_TEXCOORD2_4F, s, t, p, q);
+  Pushbuffer::End();
 }
 
 void NV2AState::SetTexCoord2S(int s, int t, int p, int q) const {
-  auto pb = pb_begin();
+  Pushbuffer::Begin();
   uint32_t st = (s & 0xFFFF) | (t << 16);
   uint32_t pq = (p & 0xFFFF) | (q << 16);
-  pb = pb_push2(pb, NV097_SET_TEXCOORD2_4S, st, pq);
-  pb_end(pb);
+  Pushbuffer::Push(NV097_SET_TEXCOORD2_4S, st, pq);
+  Pushbuffer::End();
 }
 
 void NV2AState::SetTexCoord3(float u, float v) const {
@@ -794,17 +849,17 @@ void NV2AState::SetTexCoord3S(int u, int v) const {
 }
 
 void NV2AState::SetTexCoord3(float s, float t, float p, float q) const {
-  auto pb = pb_begin();
-  pb = pb_push4f(pb, NV097_SET_TEXCOORD3_4F, s, t, p, q);
-  pb_end(pb);
+  Pushbuffer::Begin();
+  Pushbuffer::PushF(NV097_SET_TEXCOORD3_4F, s, t, p, q);
+  Pushbuffer::End();
 }
 
 void NV2AState::SetTexCoord3S(int s, int t, int p, int q) const {
-  auto pb = pb_begin();
+  Pushbuffer::Begin();
   uint32_t st = (s & 0xFFFF) | (t << 16);
   uint32_t pq = (p & 0xFFFF) | (q << 16);
-  pb = pb_push2(pb, NV097_SET_TEXCOORD3_4S, st, pq);
-  pb_end(pb);
+  Pushbuffer::Push(NV097_SET_TEXCOORD3_4S, st, pq);
+  Pushbuffer::End();
 }
 
 void NV2AState::SetupControl0(bool enable_stencil_write, bool w_buffered, bool texture_perspective_enable) const {
@@ -898,6 +953,7 @@ int NV2AState::SetPalette(const uint32_t *palette, PaletteSize size, uint32_t st
 void NV2AState::SetPaletteSize(PaletteSize size, uint32_t stage) { texture_stage_[stage].SetPaletteSize(size); }
 
 void NV2AState::FinishDraw() {
+  // PBKitBusyWait submits any deferred commands, so pbkit may safely use the pushbuffer directly in pb_finished().
   PBKitBusyWait();
 
   /* Swap buffers (if we can) */
