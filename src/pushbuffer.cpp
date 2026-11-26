@@ -10,115 +10,84 @@
 namespace PBKitPlusPlus {
 
 // Number of DWORDs pushed into a pbkit block before it is submitted when submission is not deferred. This is not a
-// hardware limit; it keeps blocks under the 128 DWORD size that debug builds of pbkit warn about.
+// hardware limit; it keeps blocks under the 128 DWORD size that debug builds of pbkit assert on.
 static constexpr uint32_t kMaxElementsPerBlock = 96;
-// Number of DWORDs that may be pushed before the pushbuffer is reset. pbkit does not wrap the pushbuffer, so everything
-// pushed between resets must fit within it. PBKIT_PUSHBUFFER_SIZE is in bytes, so this is ~80% of its DWORD capacity.
-static constexpr uint32_t kMaxElements = PBKIT_PUSHBUFFER_SIZE / 5;
 
-Pushbuffer *Pushbuffer::singleton_ = nullptr;
+Pushbuffer Pushbuffer::instance_;
 
-void Pushbuffer::Initialize() {
-  if (!singleton_) {
-    singleton_ = new Pushbuffer();
-    singleton_->submit_interval_elements_ = kMaxElementsPerBlock;
-  }
-}
-
-void Pushbuffer::Begin() {
-  PBKPP_ASSERT(singleton_);
-
-  if (singleton_->submit_deferred_) {
-    PBKPP_ASSERT(!singleton_->in_block_ && "Nested pushbuffer blocks are not supported");
-    singleton_->in_block_ = true;
-    singleton_->EnsurePbkitBlock();
-    return;
-  }
-
-  PBKPP_ASSERT(!singleton_->head_ && "Nested pushbuffer blocks are not supported");
-  singleton_->StartPbkitBlock();
-}
-
-void Pushbuffer::End(bool flush) {
-  if (singleton_->submit_deferred_) {
-    PBKPP_ASSERT(singleton_->in_block_ && "End must not be called without Begin");
-    singleton_->in_block_ = false;
-  } else {
-    PBKPP_ASSERT(singleton_->head_ && "End must not be called without Begin");
-    singleton_->SubmitBlock();
-  }
-
-  if (flush) {
-    Flush();
+void Pushbuffer::Initialize(uint32_t pushbuffer_bytes) {
+  if (!instance_.initialized_) {
+    instance_.initialized_ = true;
+    // pbkit does not wrap the pushbuffer, so everything pushed between resets must fit within it. The size is in
+    // bytes, so this is ~80% of its DWORD capacity.
+    instance_.capacity_elements_ = pushbuffer_bytes / 5;
+    instance_.submit_interval_elements_ = kMaxElementsPerBlock;
   }
 }
 
 void Pushbuffer::Flush() {
-  if (singleton_->submit_deferred_) {
-    PBKPP_ASSERT(!singleton_->in_block_ && "Flush must not be called within a pushbuffer block");
-    if (singleton_->head_) {
-      singleton_->SubmitBlock();
+  if (instance_.submit_deferred_) {
+    PBKPP_ASSERT(!instance_.in_block_ && "Flush must not be called within a pushbuffer block");
+    if (instance_.head_) {
+      instance_.SubmitBlock();
     }
-    singleton_->ResetPushbuffer();
+    instance_.ResetPushbuffer();
     return;
   }
 
-  PBKPP_ASSERT(!singleton_->head_ && "Flush must not be called within a pushbuffer block");
-  singleton_->ResetPushbuffer();
+  PBKPP_ASSERT(!instance_.head_ && "Flush must not be called within a pushbuffer block");
+  instance_.ResetPushbuffer();
 }
 
 void Pushbuffer::Submit() {
-  PBKPP_ASSERT(singleton_);
-  if (singleton_->submit_deferred_) {
-    PBKPP_ASSERT(!singleton_->in_block_ && "Submit must not be called within a pushbuffer block");
-    if (singleton_->head_) {
-      singleton_->SubmitBlock();
+  PBKPP_ASSERT(instance_.initialized_);
+  if (instance_.submit_deferred_) {
+    PBKPP_ASSERT(!instance_.in_block_ && "Submit must not be called within a pushbuffer block");
+    if (instance_.head_) {
+      instance_.SubmitBlock();
     }
     return;
   }
 
-  PBKPP_ASSERT(!singleton_->head_ && "Submit must not be called within a pushbuffer block");
+  PBKPP_ASSERT(!instance_.head_ && "Submit must not be called within a pushbuffer block");
 }
 
 void Pushbuffer::BeginDeferredSubmit(uint32_t submit_interval_dwords) {
-  PBKPP_ASSERT(singleton_);
-  PBKPP_ASSERT(!singleton_->submit_deferred_ && "Nested deferred submission is not supported");
-  PBKPP_ASSERT(!singleton_->head_ && "BeginDeferredSubmit must not be called within a pushbuffer block");
-  PBKPP_ASSERT(submit_interval_dwords > 0 && submit_interval_dwords < kMaxElements &&
-               "submit_interval_dwords must be less than the pushbuffer capacity");
+  PBKPP_ASSERT(instance_.initialized_);
+  PBKPP_ASSERT(!instance_.submit_deferred_ && "Nested deferred submission is not supported");
+  PBKPP_ASSERT(!instance_.head_ && "BeginDeferredSubmit must not be called within a pushbuffer block");
+  PBKPP_ASSERT(submit_interval_dwords > 0 && submit_interval_dwords <= instance_.capacity_elements_ &&
+               "submit_interval_dwords must not exceed the pushbuffer capacity");
 
-  singleton_->submit_deferred_ = true;
-  singleton_->in_block_ = false;
-  singleton_->submit_interval_elements_ = submit_interval_dwords;
+  instance_.submit_deferred_ = true;
+  instance_.in_block_ = false;
+  instance_.submit_interval_elements_ = submit_interval_dwords;
 }
 
 void Pushbuffer::EndDeferredSubmit() {
-  PBKPP_ASSERT(singleton_ && singleton_->submit_deferred_ &&
+  PBKPP_ASSERT(instance_.initialized_ && instance_.submit_deferred_ &&
                "EndDeferredSubmit must not be called without BeginDeferredSubmit");
-  PBKPP_ASSERT(!singleton_->in_block_ && "EndDeferredSubmit must not be called within a pushbuffer block");
+  PBKPP_ASSERT(!instance_.in_block_ && "EndDeferredSubmit must not be called within a pushbuffer block");
 
-  if (singleton_->head_) {
-    singleton_->SubmitBlock();
+  if (instance_.head_) {
+    instance_.SubmitBlock();
   }
-  singleton_->submit_deferred_ = false;
-  singleton_->submit_interval_elements_ = kMaxElementsPerBlock;
+  instance_.submit_deferred_ = false;
+  instance_.submit_interval_elements_ = kMaxElementsPerBlock;
 }
 
 void Pushbuffer::StartPbkitBlock() {
-  head_ = pb_begin();
-  current_block_elements_ = 0;
-}
-
-void Pushbuffer::EnsurePbkitBlock() {
-  if (!head_) {
-    StartPbkitBlock();
-  }
+  head_ = block_start_ = pb_begin();
+  const uint32_t available =
+      total_block_elements_ < capacity_elements_ ? capacity_elements_ - total_block_elements_ : 0;
+  remaining_ = available < submit_interval_elements_ ? available : submit_interval_elements_;
 }
 
 void Pushbuffer::SubmitBlock() {
+  total_block_elements_ += head_ - block_start_;
   pb_end(head_);
-  head_ = nullptr;
-  current_block_elements_ = 0;
+  head_ = block_start_ = nullptr;
+  remaining_ = 0;
 }
 
 void Pushbuffer::ResetPushbuffer() {
@@ -133,156 +102,36 @@ void Pushbuffer::ResetPushbuffer() {
   ++reset_stats_.resets;
   reset_stats_.wait_ticks += KeQueryPerformanceCounter() - start;
 
-  current_block_elements_ = 0;
   total_block_elements_ = 0;
 }
 
-void Pushbuffer::Reserve(uint32_t num_dwords) {
-  PBKPP_ASSERT(num_dwords < kMaxElements && "Single push exceeds the pushbuffer capacity");
+void Pushbuffer::AllocateSlow(uint32_t num_dwords) {
+  PBKPP_ASSERT(num_dwords < capacity_elements_ && "Single push exceeds the pushbuffer capacity");
 
-  if (submit_deferred_) {
-    // The pbkit block is opened lazily so that Submit() can hand the pushbuffer back to pbkit between blocks.
-    EnsurePbkitBlock();
+  // Allocate() has already checked that this is between Begin() and End(). With no block open, this is the first push
+  // after a deferred Begin().
+  if (head_) {
+    SubmitBlock();
   }
 
-  total_block_elements_ += num_dwords;
-  current_block_elements_ += num_dwords;
-
-  if (total_block_elements_ >= kMaxElements) {
-    SubmitBlock();
+  if (total_block_elements_ + num_dwords > capacity_elements_) {
     ResetPushbuffer();
-    StartPbkitBlock();
-    // The reserved DWORDs will be written into the new block.
-    total_block_elements_ = num_dwords;
-    current_block_elements_ = num_dwords;
-    return;
   }
 
-  if (current_block_elements_ >= submit_interval_elements_) {
-    SubmitBlock();
-    StartPbkitBlock();
-    current_block_elements_ = num_dwords;
+  StartPbkitBlock();
+
+  // A single push larger than the submit interval is allowed to overrun it; the capacity was checked above.
+  if (remaining_ < num_dwords) {
+    remaining_ = num_dwords;
   }
-}
-
-void Pushbuffer::PushTo(uint32_t subchannel, uint32_t command, uint32_t param1) {
-  singleton_->Reserve(2);
-  singleton_->head_ = pb_push1_to(subchannel, singleton_->head_, command, param1);
-}
-
-//! Pushes the given command and params to the given subchannel, returning a pointer to the next pushbuffer index to
-//! facilitate chaining.
-void Pushbuffer::PushTo(uint32_t subchannel, uint32_t command, uint32_t param1, uint32_t param2) {
-  singleton_->Reserve(3);
-  singleton_->head_ = pb_push2_to(subchannel, singleton_->head_, command, param1, param2);
-}
-
-void Pushbuffer::PushTo(uint32_t subchannel, uint32_t command, uint32_t param1, uint32_t param2, uint32_t param3) {
-  singleton_->Reserve(4);
-  singleton_->head_ = pb_push3_to(subchannel, singleton_->head_, command, param1, param2, param3);
-}
-
-void Pushbuffer::PushTo(uint32_t subchannel, uint32_t command, uint32_t param1, uint32_t param2, uint32_t param3,
-                        uint32_t param4) {
-  singleton_->Reserve(5);
-  singleton_->head_ = pb_push4_to(subchannel, singleton_->head_, command, param1, param2, param3, param4);
-}
-
-void Pushbuffer::PushTo(uint32_t subchannel, uint32_t command, float param1, float param2, float param3, float param4) {
-  singleton_->Reserve(5);
-  singleton_->head_ = pb_push4f_to(subchannel, singleton_->head_, command, param1, param2, param3, param4);
-}
-
-void Pushbuffer::PushF(uint32_t command, float param1) {
-  singleton_->Reserve(2);
-  singleton_->head_ = pb_push1f(singleton_->head_, command, param1);
-}
-
-void Pushbuffer::PushF(uint32_t command, float param1, float param2) {
-  singleton_->Reserve(3);
-  singleton_->head_ = pb_push2f(singleton_->head_, command, param1, param2);
-}
-
-void Pushbuffer::PushF(uint32_t command, float param1, float param2, float param3) {
-  singleton_->Reserve(4);
-  singleton_->head_ = pb_push3f(singleton_->head_, command, param1, param2, param3);
-}
-
-void Pushbuffer::PushF(uint32_t command, float param1, float param2, float param3, float param4) {
-  singleton_->Reserve(5);
-  singleton_->head_ = pb_push4f(singleton_->head_, command, param1, param2, param3, param4);
-}
-
-void Pushbuffer::Push(uint32_t command, uint32_t param1) {
-  singleton_->Reserve(2);
-  singleton_->head_ = pb_push1(singleton_->head_, command, param1);
-}
-
-void Pushbuffer::Push(uint32_t command, uint32_t param1, uint32_t param2) {
-  singleton_->Reserve(3);
-  singleton_->head_ = pb_push2(singleton_->head_, command, param1, param2);
-}
-
-void Pushbuffer::Push(uint32_t command, uint32_t param1, uint32_t param2, uint32_t param3) {
-  singleton_->Reserve(4);
-  singleton_->head_ = pb_push3(singleton_->head_, command, param1, param2, param3);
-}
-
-void Pushbuffer::Push(uint32_t command, uint32_t param1, uint32_t param2, uint32_t param3, uint32_t param4) {
-  singleton_->Reserve(5);
-  singleton_->head_ = pb_push4(singleton_->head_, command, param1, param2, param3, param4);
-}
-
-void Pushbuffer::Push2F(uint32_t command, const float *vector2) {
-  singleton_->Reserve(3);
-  singleton_->head_ = pb_push2fv(singleton_->head_, command, vector2);
-}
-
-void Pushbuffer::Push3F(uint32_t command, const float *vector3) {
-  singleton_->Reserve(4);
-  singleton_->head_ = pb_push3fv(singleton_->head_, command, vector3);
-}
-
-void Pushbuffer::Push4F(uint32_t command, const float *vector4) {
-  singleton_->Reserve(5);
-  singleton_->head_ = pb_push4fv(singleton_->head_, command, vector4);
-}
-
-void Pushbuffer::Push2(uint32_t command, const DWORD *vector2) {
-  singleton_->Reserve(3);
-  singleton_->head_ = pb_push2v(singleton_->head_, command, vector2);
-}
-
-void Pushbuffer::Push3(uint32_t command, const DWORD *vector3) {
-  singleton_->Reserve(4);
-  singleton_->head_ = pb_push3v(singleton_->head_, command, vector3);
-}
-
-void Pushbuffer::Push4(uint32_t command, const DWORD *vector4) {
-  singleton_->Reserve(5);
-  singleton_->head_ = pb_push4v(singleton_->head_, command, vector4);
-}
-
-void Pushbuffer::PushN(uint32_t command, uint32_t num_values, const DWORD *values) {
-  singleton_->Reserve(num_values + 1);
-  pb_push(singleton_->head_++, command, num_values);
-  memcpy(singleton_->head_, values, num_values * 4);
-  singleton_->head_ += num_values;
 }
 
 void Pushbuffer::PushTransposedMatrix(uint32_t command, const float *m) {
-  singleton_->Reserve(17);
-  singleton_->head_ = pb_push_transposed_matrix(singleton_->head_, command, m);
+  pb_push_transposed_matrix(Allocate(17), command, m);
 }
 
-void Pushbuffer::Push4x3Matrix(uint32_t command, const float *m) {
-  singleton_->Reserve(13);
-  singleton_->head_ = pb_push_4x3_matrix(singleton_->head_, command, m);
-}
+void Pushbuffer::Push4x3Matrix(uint32_t command, const float *m) { pb_push_4x3_matrix(Allocate(13), command, m); }
 
-void Pushbuffer::Push4x4Matrix(uint32_t command, const float *m) {
-  singleton_->Reserve(17);
-  singleton_->head_ = pb_push_4x4_matrix(singleton_->head_, command, m);
-}
+void Pushbuffer::Push4x4Matrix(uint32_t command, const float *m) { pb_push_4x4_matrix(Allocate(17), command, m); }
 
 }  // namespace PBKitPlusPlus

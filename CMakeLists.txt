@@ -72,6 +72,8 @@ block(SCOPE_FOR VARIABLES)
             src/dds_image.h
             src/models/model_builder.h
             src/light.h
+            src/nxdk_ext.h
+            src/pbkpp_assert.h
             src/pushbuffer.h
             src/nv2astate.h
             src/shaders/orthographic_vertex_shader.h

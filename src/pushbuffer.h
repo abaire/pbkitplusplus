@@ -1,9 +1,13 @@
 #ifndef PUSHBUFFER_H
 #define PUSHBUFFER_H
 
+#include <pbkit/pbkit.h>
 #include <xboxkrnl/xboxdef.h>
 
 #include <cstdint>
+#include <cstring>
+
+#include "pbkpp_assert.h"
 
 namespace PBKitPlusPlus {
 
@@ -19,6 +23,10 @@ namespace PBKitPlusPlus {
 //! one) costs a submission. Use BeginDeferredSubmit()/EndDeferredSubmit() (or
 //! DeferredSubmitScope) to accumulate many logical blocks into a single, larger
 //! submission.
+//!
+//! Commands are written to the pushbuffer directly rather than through pbkit's
+//! pb_push*() functions, which debug builds of pbkit (nxdk built with
+//! DEBUG=y) rely on to track writes. Those builds are not supported.
 class Pushbuffer {
  public:
   //! Default number of DWORDs pushed between submissions while submission is deferred.
@@ -39,8 +47,17 @@ class Pushbuffer {
   };
 
  public:
-  //! Initializes the pushbuffer singleton.
-  static void Initialize();
+  //! Initializes the pushbuffer singleton. Only the first call has any effect.
+  //!
+  //! `pushbuffer_bytes` must be the size pbkit allocated for its pushbuffer, i.e. the value passed to pb_size() before
+  //! pb_init(), or PBKIT_PUSHBUFFER_SIZE if pb_size() was not called. pbkit does not expose its size, so it cannot be
+  //! checked. To use a larger pushbuffer, call this before anything else that uses Pushbuffer (including the NV2AState
+  //! constructor, which calls it with the default).
+  static void Initialize(uint32_t pushbuffer_bytes = PBKIT_PUSHBUFFER_SIZE);
+
+  //! Returns the number of DWORDs that may be pushed between pushbuffer resets. Pushing more than this between calls
+  //! to Flush() causes an automatic reset, which waits for the GPU to finish all submitted work.
+  [[nodiscard]] static uint32_t CapacityDwords() { return instance_.capacity_elements_; }
 
   //! Starts a logical pushbuffer block.
   static void Begin();
@@ -71,15 +88,17 @@ class Pushbuffer {
   //! EndDeferredSubmit().
   //!
   //! Must not be called inside a Begin()/End() block or while submission is
-  //! already deferred.
+  //! already deferred. `submit_interval_dwords` may be at most CapacityDwords(),
+  //! in which case nothing is submitted until EndDeferredSubmit() unless the
+  //! pushbuffer has to be reset.
   //!
   //! While submission is deferred, the pbkit pushbuffer must not be used
   //! directly (e.g., pb_begin()/pb_end(), pb_reset(), pb_draw_text_screen())
   //! without first calling Submit(), as pbkit does not know about the pending
   //! commands and will overwrite them.
   //!
-  //! Note that debug builds of pbkit print a warning for any block larger than
-  //! 128 DWORDs.
+  //! Debug builds of pbkit (nxdk built with DEBUG=y) assert on any block
+  //! larger than 128 DWORDs, so deferred submission cannot be used with them.
   static void BeginDeferredSubmit(uint32_t submit_interval_dwords = kDefaultSubmitIntervalDwords);
 
   //! Submits any pending commands and stops deferring submission.
@@ -95,10 +114,10 @@ class Pushbuffer {
   };
 
   //! Returns the cumulative reset statistics.
-  [[nodiscard]] static ResetStats GetResetStats() { return singleton_ ? singleton_->reset_stats_ : ResetStats{}; }
+  [[nodiscard]] static ResetStats GetResetStats() { return instance_.reset_stats_; }
 
   //! Returns true if submission is currently deferred.
-  [[nodiscard]] static bool IsSubmitDeferred() { return singleton_ && singleton_->submit_deferred_; }
+  [[nodiscard]] static bool IsSubmitDeferred() { return instance_.initialized_ && instance_.submit_deferred_; }
 
   //! Pushes the given command and param to the given subchannel.
   static void PushTo(uint32_t subchannel, uint32_t command, uint32_t param1);
@@ -178,14 +197,33 @@ class Pushbuffer {
  private:
   Pushbuffer() = default;
 
-  //! Ensures that at least num_dwords values may be added to the pushbuffer.
-  void Reserve(uint32_t num_dwords);
+  //! Returns a pointer to `num_dwords` DWORDs of pushbuffer space and advances past them, submitting and resetting the
+  //! pushbuffer as needed.
+  static uint32_t *Allocate(uint32_t num_dwords);
+
+  //! Handles an allocation that does not fit in the current underlying pbkit block. Leaves a block open with room for
+  //! at least `num_dwords` DWORDs.
+  void AllocateSlow(uint32_t num_dwords);
+
+  //! Largest number of parameters a single method header can carry.
+  static constexpr uint32_t kMaxMethodParams = 0x7FF;
+
+  //! Encodes a method header for `count` parameters.
+  static uint32_t Method(uint32_t subchannel, uint32_t command, uint32_t count) {
+    PBKPP_ASSERT(count <= kMaxMethodParams && "Too many parameters for one method");
+    PBKPP_ASSERT(subchannel <= 7 && "Invalid subchannel");
+    return (count << 18) | (subchannel << 13) | command;
+  }
+
+  //! Returns the bits of the given float.
+  static uint32_t Bits(float value) {
+    uint32_t ret;
+    std::memcpy(&ret, &value, sizeof(ret));
+    return ret;
+  }
 
   //! Starts a new underlying pbkit block.
   void StartPbkitBlock();
-
-  //! Starts a new underlying pbkit block if one is not already open.
-  void EnsurePbkitBlock();
 
   //! Ends the current underlying pbkit block, submitting it to the GPU.
   void SubmitBlock();
@@ -193,12 +231,17 @@ class Pushbuffer {
   //! Waits for the GPU to consume the pushbuffer and resets it to head.
   void ResetPushbuffer();
 
+  //! Write position within the current underlying pbkit block, or nullptr if no block is open.
   uint32_t *head_ = nullptr;
 
-  //! The number of dwords in the current underlying pbkit block.
-  uint32_t current_block_elements_ = 0;
+  //! Start of the current underlying pbkit block.
+  uint32_t *block_start_ = nullptr;
 
-  //! The total number of dwords submitted since the last flush/reset.
+  //! Number of DWORDs that may still be written to the current underlying pbkit block before it must be submitted
+  //! (or the pushbuffer reset). 0 if no block is open.
+  uint32_t remaining_ = 0;
+
+  //! The total number of dwords in blocks submitted since the last flush/reset, excluding the current block.
   uint32_t total_block_elements_ = 0;
 
   //! Whether submission is deferred.
@@ -207,13 +250,158 @@ class Pushbuffer {
   //! Whether a logical Begin() is outstanding (only tracked while submission is deferred).
   bool in_block_ = false;
 
+  //! Number of DWORDs that may be pushed between resets.
+  uint32_t capacity_elements_ = 0;
+
   //! Number of DWORDs that may be pushed into one underlying pbkit block before it is submitted.
   uint32_t submit_interval_elements_ = 0;
 
   ResetStats reset_stats_{};
 
-  static Pushbuffer *singleton_;
+  //! Whether Initialize() has been called.
+  bool initialized_ = false;
+
+  //! The only instance. It is a static object rather than a pointer so that inlined pushes address its fields
+  //! directly, instead of reloading a pointer after every store to the pushbuffer.
+  static Pushbuffer instance_;
 };
+
+inline void Pushbuffer::Begin() {
+  PBKPP_ASSERT(instance_.initialized_);
+  auto self = &instance_;
+
+  if (self->submit_deferred_) {
+    PBKPP_ASSERT(!self->in_block_ && "Nested pushbuffer blocks are not supported");
+    // The pbkit block is opened lazily by the first push so that Submit() can hand the pushbuffer back to pbkit
+    // between blocks.
+    self->in_block_ = true;
+    return;
+  }
+
+  PBKPP_ASSERT(!self->head_ && "Nested pushbuffer blocks are not supported");
+  self->StartPbkitBlock();
+}
+
+inline void Pushbuffer::End(bool flush) {
+  PBKPP_ASSERT(instance_.initialized_);
+  auto self = &instance_;
+  if (self->submit_deferred_) {
+    PBKPP_ASSERT(self->in_block_ && "End must not be called without Begin");
+    self->in_block_ = false;
+  } else {
+    PBKPP_ASSERT(self->head_ && "End must not be called without Begin");
+    self->SubmitBlock();
+  }
+
+  if (flush) {
+    Flush();
+  }
+}
+
+inline uint32_t *Pushbuffer::Allocate(uint32_t num_dwords) {
+  auto self = &instance_;
+  PBKPP_ASSERT(self->initialized_ && (self->submit_deferred_ ? self->in_block_ : self->head_ != nullptr) &&
+               "Push must be called between Begin and End");
+  if (__builtin_expect(num_dwords > self->remaining_, 0)) {
+    self->AllocateSlow(num_dwords);
+  }
+  self->remaining_ -= num_dwords;
+  auto ret = self->head_;
+  self->head_ = ret + num_dwords;
+  return ret;
+}
+
+inline void Pushbuffer::PushTo(uint32_t subchannel, uint32_t command, uint32_t param1) {
+  auto p = Allocate(2);
+  p[0] = Method(subchannel, command, 1);
+  p[1] = param1;
+}
+
+inline void Pushbuffer::PushTo(uint32_t subchannel, uint32_t command, uint32_t param1, uint32_t param2) {
+  auto p = Allocate(3);
+  p[0] = Method(subchannel, command, 2);
+  p[1] = param1;
+  p[2] = param2;
+}
+
+inline void Pushbuffer::PushTo(uint32_t subchannel, uint32_t command, uint32_t param1, uint32_t param2,
+                               uint32_t param3) {
+  auto p = Allocate(4);
+  p[0] = Method(subchannel, command, 3);
+  p[1] = param1;
+  p[2] = param2;
+  p[3] = param3;
+}
+
+inline void Pushbuffer::PushTo(uint32_t subchannel, uint32_t command, uint32_t param1, uint32_t param2, uint32_t param3,
+                               uint32_t param4) {
+  auto p = Allocate(5);
+  p[0] = Method(subchannel, command, 4);
+  p[1] = param1;
+  p[2] = param2;
+  p[3] = param3;
+  p[4] = param4;
+}
+
+inline void Pushbuffer::PushTo(uint32_t subchannel, uint32_t command, float param1, float param2, float param3,
+                               float param4) {
+  PushTo(subchannel, command, Bits(param1), Bits(param2), Bits(param3), Bits(param4));
+}
+
+inline void Pushbuffer::PushF(uint32_t command, float param1) { PushTo(SUBCH_3D, command, Bits(param1)); }
+
+inline void Pushbuffer::PushF(uint32_t command, float param1, float param2) {
+  PushTo(SUBCH_3D, command, Bits(param1), Bits(param2));
+}
+
+inline void Pushbuffer::PushF(uint32_t command, float param1, float param2, float param3) {
+  PushTo(SUBCH_3D, command, Bits(param1), Bits(param2), Bits(param3));
+}
+
+inline void Pushbuffer::PushF(uint32_t command, float param1, float param2, float param3, float param4) {
+  PushTo(SUBCH_3D, command, Bits(param1), Bits(param2), Bits(param3), Bits(param4));
+}
+
+inline void Pushbuffer::Push(uint32_t command, uint32_t param1) { PushTo(SUBCH_3D, command, param1); }
+
+inline void Pushbuffer::Push(uint32_t command, uint32_t param1, uint32_t param2) {
+  PushTo(SUBCH_3D, command, param1, param2);
+}
+
+inline void Pushbuffer::Push(uint32_t command, uint32_t param1, uint32_t param2, uint32_t param3) {
+  PushTo(SUBCH_3D, command, param1, param2, param3);
+}
+
+inline void Pushbuffer::Push(uint32_t command, uint32_t param1, uint32_t param2, uint32_t param3, uint32_t param4) {
+  PushTo(SUBCH_3D, command, param1, param2, param3, param4);
+}
+
+inline void Pushbuffer::Push2F(uint32_t command, const float *vector2) { PushF(command, vector2[0], vector2[1]); }
+
+inline void Pushbuffer::Push3F(uint32_t command, const float *vector3) {
+  PushF(command, vector3[0], vector3[1], vector3[2]);
+}
+
+inline void Pushbuffer::Push4F(uint32_t command, const float *vector4) {
+  PushF(command, vector4[0], vector4[1], vector4[2], vector4[3]);
+}
+
+inline void Pushbuffer::Push2(uint32_t command, const DWORD *vector2) { Push(command, vector2[0], vector2[1]); }
+
+inline void Pushbuffer::Push3(uint32_t command, const DWORD *vector3) {
+  Push(command, vector3[0], vector3[1], vector3[2]);
+}
+
+inline void Pushbuffer::Push4(uint32_t command, const DWORD *vector4) {
+  Push(command, vector4[0], vector4[1], vector4[2], vector4[3]);
+}
+
+inline void Pushbuffer::PushN(uint32_t command, uint32_t num_values, const DWORD *values) {
+  PBKPP_ASSERT(values && num_values > 0 && num_values <= kMaxMethodParams && "Invalid PushN parameters");
+  auto p = Allocate(num_values + 1);
+  p[0] = Method(SUBCH_3D, command, num_values);
+  std::memcpy(p + 1, values, num_values * sizeof(*values));
+}
 
 }  // namespace PBKitPlusPlus
 
